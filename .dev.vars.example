@@ -1,0 +1,10 @@
+# Copy to .dev.vars (gitignored) for local wrangler dev
+# In production, set these as Cloudflare Pages secrets via the dashboard
+
+SESSION_SECRET=change-me-to-a-random-32-char-string
+
+SMTP_HOST=mail.home.pl
+SMTP_PORT=587
+SMTP_USER=twoj@adres.pl
+SMTP_PASS=twoje-haslo-smtp
+SMTP_FROM=salki@lafrentz.pl
