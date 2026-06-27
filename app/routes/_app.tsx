@@ -21,7 +21,7 @@ export default function AppShell({ loaderData }: Route.ComponentProps) {
 
   const nav = [
     { to: "/", label: "Kalendarz", icon: CalendarDays },
-    ...(canManageBookings(user.role) ? [{ to: "/admin/rezerwacje", label: "Wnioski", icon: ClipboardList }] : []),
+    ...(canManageBookings(user.role) ? [{ to: "/admin/rezerwacje", label: "Prośby o rezerwacje", icon: ClipboardList }] : []),
     ...(canManageBookings(user.role) ? [{ to: "/admin/panel", label: "Rezerwacje", icon: CalendarRange }] : []),
     ...(canManageUsers(user.role)    ? [{ to: "/admin/uzytkownicy", label: "Użytkownicy", icon: Users }] : []),
     ...(canManageRooms(user.role)    ? [{ to: "/admin/sale", label: "Sale", icon: DoorOpen }] : []),

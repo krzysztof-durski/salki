@@ -1,0 +1,292 @@
+{
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/.react-router/types/+future.ts": {
+    "mtime": 1782560691.9647205,
+    "ast_hash": "946cbf41ce33d02a825b720a9698d07a",
+    "semantic_hash": "946cbf41ce33d02a825b720a9698d07a"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/.react-router/types/+routes.ts": {
+    "mtime": 1782560691.96463,
+    "ast_hash": "e637a8ce896cad552b54bb0fcc777d39",
+    "semantic_hash": "e637a8ce896cad552b54bb0fcc777d39"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/.react-router/types/+server-build.d.ts": {
+    "mtime": 1782560691.9647152,
+    "ast_hash": "feb059bd8a13e59965da5ed7f19ac4ff",
+    "semantic_hash": "feb059bd8a13e59965da5ed7f19ac4ff"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/.react-router/types/app/+types/root.ts": {
+    "mtime": 1782560691.9648526,
+    "ast_hash": "be2dbb5fac580743e65bc9134fe35a71",
+    "semantic_hash": "be2dbb5fac580743e65bc9134fe35a71"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/.react-router/types/app/routes/+types/_app.ts": {
+    "mtime": 1782560691.965252,
+    "ast_hash": "1dbdfd1c785c8a5925a22721c9592cb2",
+    "semantic_hash": "1dbdfd1c785c8a5925a22721c9592cb2"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/.react-router/types/app/routes/+types/admin.logi.ts": {
+    "mtime": 1782560691.9651392,
+    "ast_hash": "c6f02f9a72a859b7fa3f3dc650ebaea2",
+    "semantic_hash": "c6f02f9a72a859b7fa3f3dc650ebaea2"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/.react-router/types/app/routes/+types/admin.panel.ts": {
+    "mtime": 1782560691.9650438,
+    "ast_hash": "0b2bcf232cc2b3983d1e50c1051c7392",
+    "semantic_hash": "0b2bcf232cc2b3983d1e50c1051c7392"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/.react-router/types/app/routes/+types/admin.rezerwacje.ts": {
+    "mtime": 1782560691.9650362,
+    "ast_hash": "ff07f7d62b3c4589d1a904c6233641b2",
+    "semantic_hash": "ff07f7d62b3c4589d1a904c6233641b2"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/.react-router/types/app/routes/+types/admin.sale.ts": {
+    "mtime": 1782560691.9649742,
+    "ast_hash": "65e9c1b6c4be08264b5ea5d2a6393846",
+    "semantic_hash": "65e9c1b6c4be08264b5ea5d2a6393846"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/.react-router/types/app/routes/+types/admin.uzytkownicy.ts": {
+    "mtime": 1782560691.9649096,
+    "ast_hash": "67d4c00141cc90d26a48ddda14072726",
+    "semantic_hash": "67d4c00141cc90d26a48ddda14072726"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/.react-router/types/app/routes/+types/dashboard.ts": {
+    "mtime": 1782560691.9652905,
+    "ast_hash": "6d13dad696bd965749744b8a6809a479",
+    "semantic_hash": "6d13dad696bd965749744b8a6809a479"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/.react-router/types/app/routes/+types/login.ts": {
+    "mtime": 1782560691.9651933,
+    "ast_hash": "e3d69a3a3327a82e5473bdfd0bfb76bd",
+    "semantic_hash": "e3d69a3a3327a82e5473bdfd0bfb76bd"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/.react-router/types/app/routes/+types/logout.ts": {
+    "mtime": 1782560691.9652343,
+    "ast_hash": "3a48cb956ee7ac66414b6cf0c46441ac",
+    "semantic_hash": "3a48cb956ee7ac66414b6cf0c46441ac"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/.react-router/types/app/routes/+types/rezerwacje.$id.edytuj.ts": {
+    "mtime": 1782560691.965256,
+    "ast_hash": "b866d87076d62f37f178dd38a6128a39",
+    "semantic_hash": "b866d87076d62f37f178dd38a6128a39"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/.react-router/types/app/routes/+types/rezerwacje.$id.ts": {
+    "mtime": 1782560691.9652762,
+    "ast_hash": "bc90befc1c3c2188a4e552b53de0014c",
+    "semantic_hash": "bc90befc1c3c2188a4e552b53de0014c"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/.react-router/types/app/routes/+types/rezerwacje.$id.zmiana.ts": {
+    "mtime": 1782560691.9648902,
+    "ast_hash": "56a03b7f88ad34ccfc91849c7f0f7cd7",
+    "semantic_hash": "56a03b7f88ad34ccfc91849c7f0f7cd7"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/.react-router/types/app/routes/+types/rezerwacje.nowa.ts": {
+    "mtime": 1782560691.965253,
+    "ast_hash": "9d4a5646eae67be20a56af87328fab60",
+    "semantic_hash": "9d4a5646eae67be20a56af87328fab60"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/.react-router/types/app/routes/+types/ustawienia.ts": {
+    "mtime": 1782560691.9649003,
+    "ast_hash": "7d1714bb7529379796803cc944d607d5",
+    "semantic_hash": "7d1714bb7529379796803cc944d607d5"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/app/app.d.ts": {
+    "mtime": 1781094572.771,
+    "ast_hash": "0699a34b0b48ce1677b8d83a51a23dcd",
+    "semantic_hash": "0699a34b0b48ce1677b8d83a51a23dcd"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/app/cloudflare-env.d.ts": {
+    "mtime": 1781095786.6896698,
+    "ast_hash": "912a3425d112ec6ba3aa75ef164bbee7",
+    "semantic_hash": "912a3425d112ec6ba3aa75ef164bbee7"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/app/components/CalendarView.tsx": {
+    "mtime": 1781108616.5627692,
+    "ast_hash": "566cd46e84241aa5ea125f2b8cd85f1b",
+    "semantic_hash": "566cd46e84241aa5ea125f2b8cd85f1b"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/app/entry.client.tsx": {
+    "mtime": 1781094563.7136753,
+    "ast_hash": "ded4e6fe0ee96d53e78b16de6a0ba9de",
+    "semantic_hash": "ded4e6fe0ee96d53e78b16de6a0ba9de"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/app/entry.server.tsx": {
+    "mtime": 1781094559.3609214,
+    "ast_hash": "f13e09e7933b8140725b6d8c1334c437",
+    "semantic_hash": "f13e09e7933b8140725b6d8c1334c437"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/app/lib/audit.server.ts": {
+    "mtime": 1781095839.5202527,
+    "ast_hash": "287832d7c130a34fa20d53e4fe2d6b98",
+    "semantic_hash": "287832d7c130a34fa20d53e4fe2d6b98"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/app/lib/auth.server.ts": {
+    "mtime": 1781095901.2122908,
+    "ast_hash": "8127a4368f8b96404810967a83fe90bf",
+    "semantic_hash": "8127a4368f8b96404810967a83fe90bf"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/app/lib/db.server.ts": {
+    "mtime": 1781095832.8668542,
+    "ast_hash": "08d8ad0376ec500324073bac326323e7",
+    "semantic_hash": "08d8ad0376ec500324073bac326323e7"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/app/lib/email.server.ts": {
+    "mtime": 1781102632.0026054,
+    "ast_hash": "fb66339853fb8ee7d34ba3f0ac8ec87b",
+    "semantic_hash": "fb66339853fb8ee7d34ba3f0ac8ec87b"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/app/root.tsx": {
+    "mtime": 1781095928.5751445,
+    "ast_hash": "cecdcae0e04315d4a632eda9c73f57cd",
+    "semantic_hash": "cecdcae0e04315d4a632eda9c73f57cd"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/app/routes.ts": {
+    "mtime": 1781098682.3619666,
+    "ast_hash": "0dd4a386a438825f210589b23f0b2397",
+    "semantic_hash": "0dd4a386a438825f210589b23f0b2397"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/app/routes/_app.tsx": {
+    "mtime": 1782561549.4643784,
+    "ast_hash": "865102862dbab622b93cd3f7183b1d49",
+    "semantic_hash": "865102862dbab622b93cd3f7183b1d49"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/app/routes/admin.logi.tsx": {
+    "mtime": 1781096398.6056225,
+    "ast_hash": "ed281ef1847beb1587d0503d3349511f",
+    "semantic_hash": "ed281ef1847beb1587d0503d3349511f"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/app/routes/admin.panel.tsx": {
+    "mtime": 1781098675.0342832,
+    "ast_hash": "e9ca295d7c2920740c9e8e1af149d9eb",
+    "semantic_hash": "e9ca295d7c2920740c9e8e1af149d9eb"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/app/routes/admin.rezerwacje.tsx": {
+    "mtime": 1781096311.2815282,
+    "ast_hash": "18f9b3fafcaab592b6f19538736bc648",
+    "semantic_hash": "18f9b3fafcaab592b6f19538736bc648"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/app/routes/admin.sale.tsx": {
+    "mtime": 1781096376.318597,
+    "ast_hash": "5b9f423a84fa2fac6ab435adca01d75a",
+    "semantic_hash": "5b9f423a84fa2fac6ab435adca01d75a"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/app/routes/admin.uzytkownicy.tsx": {
+    "mtime": 1781101745.5467846,
+    "ast_hash": "0d3db6d50b7a86923cc2cbbdf11b61b8",
+    "semantic_hash": "0d3db6d50b7a86923cc2cbbdf11b61b8"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/app/routes/dashboard.tsx": {
+    "mtime": 1781096008.9045432,
+    "ast_hash": "325055b69fe812a3be904684ead23eb3",
+    "semantic_hash": "325055b69fe812a3be904684ead23eb3"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/app/routes/login.tsx": {
+    "mtime": 1781095948.940909,
+    "ast_hash": "ee4f5e297466f598c4cd9e1d7738203e",
+    "semantic_hash": "ee4f5e297466f598c4cd9e1d7738203e"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/app/routes/logout.tsx": {
+    "mtime": 1781095954.1931643,
+    "ast_hash": "383bfa4605b8b6a51ae5f37df40eb992",
+    "semantic_hash": "383bfa4605b8b6a51ae5f37df40eb992"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/app/routes/rezerwacje.$id.edytuj.tsx": {
+    "mtime": 1781098968.1103826,
+    "ast_hash": "8728f2e616bf0b7108c38ea6587ceab0",
+    "semantic_hash": "8728f2e616bf0b7108c38ea6587ceab0"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/app/routes/rezerwacje.$id.tsx": {
+    "mtime": 1781099544.7258499,
+    "ast_hash": "a4af671952a3b5cc5ab8e59d26e15115",
+    "semantic_hash": "a4af671952a3b5cc5ab8e59d26e15115"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/app/routes/rezerwacje.$id.zmiana.tsx": {
+    "mtime": 1781096256.7799616,
+    "ast_hash": "11a3d160789bc9daf17d2bbc2c124625",
+    "semantic_hash": "11a3d160789bc9daf17d2bbc2c124625"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/app/routes/rezerwacje.nowa.tsx": {
+    "mtime": 1781098860.2278073,
+    "ast_hash": "23725dc493109987069407cab3a793fd",
+    "semantic_hash": "23725dc493109987069407cab3a793fd"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/app/routes/ustawienia.tsx": {
+    "mtime": 1781107226.8894997,
+    "ast_hash": "099656e102b59c0bc52a4786abf658ec",
+    "semantic_hash": "099656e102b59c0bc52a4786abf658ec"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/app/types.ts": {
+    "mtime": 1781095826.3149314,
+    "ast_hash": "a214c240a3908ec8a764809c11c1f152",
+    "semantic_hash": "a214c240a3908ec8a764809c11c1f152"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/functions/[[path]].ts": {
+    "mtime": 1781094760.3647983,
+    "ast_hash": "c6f5881180d29a1202a21b7c29a3ef69",
+    "semantic_hash": "c6f5881180d29a1202a21b7c29a3ef69"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/migrations/0001_initial.sql": {
+    "mtime": 1781097058.1188042,
+    "ast_hash": "a6eaaae7007b9427fa27fe60077ccc4b",
+    "semantic_hash": "a6eaaae7007b9427fa27fe60077ccc4b"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/migrations/0002_seed_rooms.sql": {
+    "mtime": 1781094808.0268912,
+    "ast_hash": "e2d5b67b9272bec54418f02b0bd52585",
+    "semantic_hash": "e2d5b67b9272bec54418f02b0bd52585"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/package.json": {
+    "mtime": 1781094626.2831085,
+    "ast_hash": "785023e7478f7d397f93e0407da6dd1c",
+    "semantic_hash": "785023e7478f7d397f93e0407da6dd1c"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/react-router.config.ts": {
+    "mtime": 1781097053.3179781,
+    "ast_hash": "7ad72d404e6a525d01e3bd9c15083864",
+    "semantic_hash": "7ad72d404e6a525d01e3bd9c15083864"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/tsconfig.json": {
+    "mtime": 1781094579.564707,
+    "ast_hash": "c0638998458562ed768284dd601f42cd",
+    "semantic_hash": "c0638998458562ed768284dd601f42cd"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/vite.config.ts": {
+    "mtime": 1781102637.1720757,
+    "ast_hash": "f1ff9457cd574de7babd185a87e87439",
+    "semantic_hash": "f1ff9457cd574de7babd185a87e87439"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/README.md": {
+    "mtime": 1781014599.8329167,
+    "ast_hash": "bc9e3365a1471b4de4199c9625877de3",
+    "semantic_hash": "bc9e3365a1471b4de4199c9625877de3"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/public/assets/Lafrentz - logo pionowe RGB.png": {
+    "mtime": 1706137200.0,
+    "ast_hash": "9f9f83ef29179d8b8a73151a75699deb",
+    "semantic_hash": "9f9f83ef29179d8b8a73151a75699deb"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/public/assets/Lafrentz - logo pionowe RGB.svg": {
+    "mtime": 1706137200.0,
+    "ast_hash": "d1ee45d4c8be77ee7a741f05305ffe68",
+    "semantic_hash": "d1ee45d4c8be77ee7a741f05305ffe68"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/public/assets/Lafrentz - logo podstawowe RGB.png": {
+    "mtime": 1706137200.0,
+    "ast_hash": "47130782e2e732cad9dfd4fb5d66fa9a",
+    "semantic_hash": "47130782e2e732cad9dfd4fb5d66fa9a"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/public/assets/Lafrentz - logo podstawowe RGB.svg": {
+    "mtime": 1706137200.0,
+    "ast_hash": "eb0cf133cf534c307a84a5bad16b1fd4",
+    "semantic_hash": "eb0cf133cf534c307a84a5bad16b1fd4"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/public/assets/Lafrentz - sygnet RGB.png": {
+    "mtime": 1706137200.0,
+    "ast_hash": "7e6d60cfcd13791025a96197417944ea",
+    "semantic_hash": "7e6d60cfcd13791025a96197417944ea"
+  },
+  "/Users/dursky/Desktop/GitRepos/Lafrentz/salki/public/assets/Lafrentz - sygnet RGB.svg": {
+    "mtime": 1706137200.0,
+    "ast_hash": "663a2610577b8696201625c116f795e6",
+    "semantic_hash": "663a2610577b8696201625c116f795e6"
+  }
+}
