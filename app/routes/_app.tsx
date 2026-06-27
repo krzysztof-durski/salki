@@ -32,6 +32,7 @@ function playChime() {
 }
 
 export async function loader({ request, context }: Route.LoaderArgs) {
+  try {
   const { env } = context.cloudflare;
   const token = getTokenFromRequest(request);
   const user = requireUser(await getSessionUser(env.DB, token));
@@ -53,6 +54,11 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const notifCount = notifRow?.n ?? 0;
 
   return { user, pendingCount, notifCount };
+  } catch (err) {
+    if (err instanceof Response) throw err;
+    console.error('[_app loader]', String(err), err instanceof Error ? err.stack : '');
+    throw new Error(String(err));
+  }
 }
 
 export default function AppShell({ loaderData }: Route.ComponentProps) {
