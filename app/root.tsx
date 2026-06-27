@@ -43,7 +43,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   if (isRouteErrorResponse(error)) {
     status = error.status;
     message = error.status === 404 ? "Nie znaleziono strony." : error.statusText || message;
-  } else if (import.meta.env.DEV && error instanceof Error) {
+  } else if (error instanceof Error) {
     message = error.message;
   }
 
