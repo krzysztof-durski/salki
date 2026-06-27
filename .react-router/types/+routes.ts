@@ -20,6 +20,12 @@ type Pages = {
   "/logout": {
     params: {};
   };
+  "/api/pending-count": {
+    params: {};
+  };
+  "/api/notifications": {
+    params: {};
+  };
   "/rezerwacje/nowa": {
     params: {};
   };
@@ -39,6 +45,9 @@ type Pages = {
     };
   };
   "/ustawienia": {
+    params: {};
+  };
+  "/powiadomienia": {
     params: {};
   };
   "/admin/rezerwacje": {
@@ -61,7 +70,7 @@ type Pages = {
 type RouteFiles = {
   "root.tsx": {
     id: "root";
-    page: "/" | "/login" | "/logout" | "/rezerwacje/nowa" | "/rezerwacje/:id" | "/rezerwacje/:id/edytuj" | "/rezerwacje/:id/zmiana" | "/ustawienia" | "/admin/rezerwacje" | "/admin/panel" | "/admin/uzytkownicy" | "/admin/sale" | "/admin/logi";
+    page: "/" | "/login" | "/logout" | "/api/pending-count" | "/api/notifications" | "/rezerwacje/nowa" | "/rezerwacje/:id" | "/rezerwacje/:id/edytuj" | "/rezerwacje/:id/zmiana" | "/ustawienia" | "/powiadomienia" | "/admin/rezerwacje" | "/admin/panel" | "/admin/uzytkownicy" | "/admin/sale" | "/admin/logi";
   };
   "routes/login.tsx": {
     id: "routes/login";
@@ -71,9 +80,17 @@ type RouteFiles = {
     id: "routes/logout";
     page: "/logout";
   };
+  "routes/api.pending-count.ts": {
+    id: "routes/api.pending-count";
+    page: "/api/pending-count";
+  };
+  "routes/api.notifications.ts": {
+    id: "routes/api.notifications";
+    page: "/api/notifications";
+  };
   "routes/_app.tsx": {
     id: "routes/_app";
-    page: "/" | "/rezerwacje/nowa" | "/rezerwacje/:id" | "/rezerwacje/:id/edytuj" | "/rezerwacje/:id/zmiana" | "/ustawienia" | "/admin/rezerwacje" | "/admin/panel" | "/admin/uzytkownicy" | "/admin/sale" | "/admin/logi";
+    page: "/" | "/rezerwacje/nowa" | "/rezerwacje/:id" | "/rezerwacje/:id/edytuj" | "/rezerwacje/:id/zmiana" | "/ustawienia" | "/powiadomienia" | "/admin/rezerwacje" | "/admin/panel" | "/admin/uzytkownicy" | "/admin/sale" | "/admin/logi";
   };
   "routes/dashboard.tsx": {
     id: "routes/dashboard";
@@ -98,6 +115,10 @@ type RouteFiles = {
   "routes/ustawienia.tsx": {
     id: "routes/ustawienia";
     page: "/ustawienia";
+  };
+  "routes/powiadomienia.tsx": {
+    id: "routes/powiadomienia";
+    page: "/powiadomienia";
   };
   "routes/admin.rezerwacje.tsx": {
     id: "routes/admin.rezerwacje";
@@ -125,6 +146,8 @@ type RouteModules = {
   "root": typeof import("./app/root.tsx");
   "routes/login": typeof import("./app/routes/login.tsx");
   "routes/logout": typeof import("./app/routes/logout.tsx");
+  "routes/api.pending-count": typeof import("./app/routes/api.pending-count.ts");
+  "routes/api.notifications": typeof import("./app/routes/api.notifications.ts");
   "routes/_app": typeof import("./app/routes/_app.tsx");
   "routes/dashboard": typeof import("./app/routes/dashboard.tsx");
   "routes/rezerwacje.nowa": typeof import("./app/routes/rezerwacje.nowa.tsx");
@@ -132,6 +155,7 @@ type RouteModules = {
   "routes/rezerwacje.$id.edytuj": typeof import("./app/routes/rezerwacje.$id.edytuj.tsx");
   "routes/rezerwacje.$id.zmiana": typeof import("./app/routes/rezerwacje.$id.zmiana.tsx");
   "routes/ustawienia": typeof import("./app/routes/ustawienia.tsx");
+  "routes/powiadomienia": typeof import("./app/routes/powiadomienia.tsx");
   "routes/admin.rezerwacje": typeof import("./app/routes/admin.rezerwacje.tsx");
   "routes/admin.panel": typeof import("./app/routes/admin.panel.tsx");
   "routes/admin.uzytkownicy": typeof import("./app/routes/admin.uzytkownicy.tsx");

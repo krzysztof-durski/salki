@@ -29,7 +29,7 @@ export async function action({ request, context }: Route.ActionArgs) {
 
   const token = await createSession(env.DB, user.id);
   const headers = new Headers();
-  headers.set("Set-Cookie", setSessionCookie(token));
+  headers.set("Set-Cookie", setSessionCookie(token, request));
 
   if (user.must_change_password) {
     return redirect("/ustawienia?zmien-haslo=1", { headers });

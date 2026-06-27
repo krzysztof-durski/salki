@@ -1,11 +1,10 @@
-export type Role = 'super_admin' | 'admin' | 'zarzad' | 'dyrektor' | 'pracownik';
+export type Role = 'super_admin' | 'admin' | 'zarzad' | 'pracownik';
 
 export const ROLE_LABELS: Record<Role, string> = {
   super_admin: 'Super Admin',
   admin: 'Administrator',
   zarzad: 'Zarząd',
-  dyrektor: 'Dyrektor',
-  pracownik: 'Pracownik',
+  pracownik: 'Biuro',
 };
 
 export type BookingStatus = 'pending' | 'approved' | 'rejected' | 'counter_proposed';
@@ -125,7 +124,7 @@ export function isAdmin(role: Role): boolean {
 }
 
 export function assignableRoles(actorRole: Role): Role[] {
-  const all: Role[] = ['admin', 'zarzad', 'dyrektor', 'pracownik'];
+  const all: Role[] = ['admin', 'zarzad', 'pracownik'];
   if (actorRole === 'super_admin') return all;
   return all.filter(r => r !== 'zarzad');
 }

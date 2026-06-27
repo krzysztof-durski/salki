@@ -3,6 +3,7 @@ import type { Route } from "./+types/ustawienia";
 import { getTokenFromRequest, getSessionUser, requireUser, hashPassword, verifyPassword } from "~/lib/auth.server";
 import { queryAll, execute } from "~/lib/db.server";
 import type { Room } from "~/types";
+import { sendEmail, tplDutyOff } from "~/lib/email.server";
 
 export async function loader({ request, context }: Route.LoaderArgs) {
   const { env } = context.cloudflare;
@@ -61,11 +62,24 @@ export async function action({ request, context }: Route.ActionArgs) {
 
   if (_action === "toggle_duty") {
     if (user.role === 'admin' || user.role === 'super_admin') {
+      const turningOff = user.on_duty === 1;
       await execute(
         env.DB,
         "UPDATE users SET on_duty=CASE WHEN on_duty=1 THEN 0 ELSE 1 END, updated_at=CURRENT_TIMESTAMP WHERE id=?",
         [user.id]
       );
+      if (turningOff) {
+        const otherAdmins = await queryAll<{ email: string }>(
+          env.DB,
+          "SELECT email FROM users WHERE role IN ('admin','super_admin') AND is_active=1 AND id != ?",
+          [user.id]
+        );
+        const emails = otherAdmins.map(a => a.email);
+        if (emails.length > 0) {
+          const tpl = tplDutyOff({ adminName: user.name });
+          await sendEmail(env, { to: emails, ...tpl });
+        }
+      }
     }
     return redirect("/ustawienia");
   }

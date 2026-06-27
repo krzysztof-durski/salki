@@ -77,11 +77,19 @@ export async function action({ params, request, context }: Route.ActionArgs) {
         "UPDATE booking_change_requests SET status='approved', admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
         [adminNote, crId]
       );
+      await execute(env.DB,
+        "INSERT INTO notifications (user_id, booking_id, type) VALUES (?,?,'change_approved')",
+        [cr.requester_id, bookingId]
+      );
       await logAction(env.DB, { userId: user.id, action: 'change_request.approved', entityType: 'booking', entityId: bookingId });
     } else {
       await execute(env.DB,
         "UPDATE booking_change_requests SET status='rejected', admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
         [adminNote, crId]
+      );
+      await execute(env.DB,
+        "INSERT INTO notifications (user_id, booking_id, type) VALUES (?,?,'change_rejected')",
+        [cr.requester_id, bookingId]
       );
       await logAction(env.DB, { userId: user.id, action: 'change_request.rejected', entityType: 'booking', entityId: bookingId });
     }
@@ -97,10 +105,6 @@ export async function action({ params, request, context }: Route.ActionArgs) {
   const newEndTime = (form.get("new_end_time") as string)?.trim() || null;
   const newTitle = (form.get("new_title") as string)?.trim() || null;
   const newAttendeeCount = form.get("new_attendee_count") ? parseInt(form.get("new_attendee_count") as string, 10) : null;
-  const newAttendeeEmailsRaw = (form.get("new_attendee_emails") as string)?.trim();
-  const newAttendeeEmails = newAttendeeEmailsRaw
-    ? JSON.stringify(newAttendeeEmailsRaw.split(/[,\n]/).map(e => e.trim()).filter(Boolean))
-    : null;
   const requesterNote = (form.get("requester_note") as string)?.trim() || null;
 
   if (!newDate && !newStartTime && !newEndTime && !newTitle) {
@@ -111,9 +115,9 @@ export async function action({ params, request, context }: Route.ActionArgs) {
     env.DB,
     `INSERT INTO booking_change_requests
        (booking_id, requester_id, new_date, new_start_time, new_end_time, new_title,
-        new_attendee_count, new_attendee_emails, requester_note)
-     VALUES (?,?,?,?,?,?,?,?,?)`,
-    [bookingId, user.id, newDate, newStartTime, newEndTime, newTitle, newAttendeeCount, newAttendeeEmails, requesterNote]
+        new_attendee_count, requester_note)
+     VALUES (?,?,?,?,?,?,?,?)`,
+    [bookingId, user.id, newDate, newStartTime, newEndTime, newTitle, newAttendeeCount, requesterNote]
   );
 
   await logAction(env.DB, {
@@ -128,16 +132,12 @@ export async function action({ params, request, context }: Route.ActionArgs) {
     env.DB,
     "SELECT email FROM users WHERE role IN ('admin','super_admin') AND is_active=1 AND on_duty=1"
   );
-  const notifyAdmins = onDutyAdmins.length > 0
-    ? onDutyAdmins
-    : await queryAll<{ email: string }>(
-        env.DB,
-        "SELECT email FROM users WHERE role IN ('admin','super_admin') AND is_active=1"
-      );
 
-  const appUrl = new URL(request.url).origin;
-  const tpl = tplChangeRequestSubmitted({ requesterName: user.name, roomName: booking.room_name!, bookingId, appUrl });
-  await sendEmail(env, { to: notifyAdmins.map(a => a.email), ...tpl });
+  if (onDutyAdmins.length > 0) {
+    const appUrl = new URL(request.url).origin;
+    const tpl = tplChangeRequestSubmitted({ requesterName: user.name, roomName: booking.room_name!, bookingId, appUrl });
+    await sendEmail(env, { to: onDutyAdmins.map(a => a.email), ...tpl });
+  }
 
   return redirect(`/rezerwacje/${bookingId}`);
 }
@@ -148,7 +148,7 @@ export default function ZmianaRezerwacji({ loaderData, actionData }: Route.Compo
   const pending = nav.state === "submitting";
 
   return (
-    <div className="max-w-xl mx-auto px-4 py-8">
+    <div className="w-full max-w-3xl mx-auto px-8 py-8">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Wniosek o zmianę rezerwacji</h1>
         <Link to={`/rezerwacje/${booking.id}`} className="text-sm text-gray-500 hover:text-gray-700">Anuluj</Link>
@@ -163,38 +163,33 @@ export default function ZmianaRezerwacji({ loaderData, actionData }: Route.Compo
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Nowy tytuł</label>
-          <input name="new_title" type="text" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+          <input name="new_title" type="text" defaultValue={booking.title ?? ""} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
         </div>
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Nowa data</label>
-          <input name="new_date" type="date" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+          <input name="new_date" type="date" defaultValue={booking.date} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Nowa godzina od</label>
-            <input name="new_start_time" type="time" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+            <input name="new_start_time" type="time" defaultValue={booking.start_time} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Nowa godzina do</label>
-            <input name="new_end_time" type="time" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+            <input name="new_end_time" type="time" defaultValue={booking.end_time} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
           </div>
         </div>
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Nowa liczba uczestników</label>
-          <input name="new_attendee_count" type="number" min="1" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Nowe adresy uczestników</label>
-          <textarea name="new_attendee_emails" rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+          <input name="new_attendee_count" type="text" inputMode="numeric" pattern="[0-9]*" defaultValue={booking.attendee_count ?? ""} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
         </div>
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Uwagi</label>
-          <textarea name="requester_note" rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+          <textarea name="requester_note" rows={2} defaultValue={booking.requester_note ?? ""} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:outline-none" />
         </div>
 
         {actionData?.error && (

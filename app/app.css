@@ -33,6 +33,15 @@
   --color-blue-950: #172554;
 }
 
+@keyframes nav-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}
+
+.nav-blink {
+  animation: nav-blink 1.3s ease-in-out infinite;
+}
+
 html,
 body {
   @apply bg-white dark:bg-gray-950;

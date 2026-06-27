@@ -1,4 +1,4 @@
--- Role values: super_admin | admin | zarzad | dyrektor | pracownik
+-- Role values: super_admin | admin | zarzad | biuro (see 0003_update_roles.sql)
 
 CREATE TABLE IF NOT EXISTS users (
   id                   INTEGER  PRIMARY KEY AUTOINCREMENT,

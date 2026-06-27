@@ -386,7 +386,7 @@ function BookingSlot({
     >
       <p className="font-semibold leading-tight truncate">{label}</p>
       <p className="opacity-80 truncate">{booking.start_time}–{booking.end_time}</p>
-      {(isOwn || isAdminView) && booking.title && (
+      {booking.title && (
         <p className="opacity-70 truncate">{booking.title}</p>
       )}
     </div>
@@ -395,7 +395,7 @@ function BookingSlot({
 
 function getSlotColor(status: Booking['status'], isOwn: boolean): string {
   if (status === 'approved') {
-    return isOwn ? 'bg-sky-200 text-sky-900' : 'bg-blue-200 text-blue-800';
+    return isOwn ? 'bg-sky-200 text-sky-900' : 'bg-gray-200 text-gray-600';
   }
   if (status === 'pending') return 'bg-amber-200 text-amber-900';
   if (status === 'counter_proposed') return 'bg-orange-200 text-orange-900';
@@ -459,7 +459,11 @@ function timeToSlot(time: string): number {
 }
 
 function todayString(): string {
-  return new Date().toISOString().split('T')[0];
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 function formatWeekRange(weekStart: string): string {

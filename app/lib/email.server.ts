@@ -1,7 +1,14 @@
+interface Attachment {
+  filename: string;
+  content: string;
+  contentType: string;
+}
+
 interface EmailOptions {
   to: string | string[];
   subject: string;
   html: string;
+  attachments?: Attachment[];
 }
 
 export async function sendEmail(env: CloudflareEnv, opts: EmailOptions): Promise<{ sent: boolean; error?: string }> {
@@ -22,7 +29,7 @@ export async function sendEmail(env: CloudflareEnv, opts: EmailOptions): Promise
 
   for (const recipient of recipients) {
     try {
-      await sendSmtp({ host, port, user, pass, from, to: recipient, subject: opts.subject, html: opts.html });
+      await sendSmtp({ host, port, user, pass, from, to: recipient, subject: opts.subject, html: opts.html, attachments: opts.attachments });
     } catch (err) {
       lastError = String(err);
       console.error('[email] Failed to send to', recipient, err);
@@ -31,6 +38,13 @@ export async function sendEmail(env: CloudflareEnv, opts: EmailOptions): Promise
   }
 
   return { sent: allSent, error: lastError };
+}
+
+function toBase64(str: string): string {
+  const bytes = new TextEncoder().encode(str);
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/(.{76})/g, '$1\r\n').trim();
 }
 
 // Uses node:net + node:tls — works in both Node.js (local dev) and Cloudflare Workers (nodejs_compat).
@@ -43,8 +57,9 @@ async function sendSmtp(opts: {
   to: string;
   subject: string;
   html: string;
+  attachments?: Attachment[];
 }): Promise<void> {
-  const { host, port, user, pass, from, to, subject, html } = opts;
+  const { host, port, user, pass, from, to, subject, html, attachments } = opts;
   const useStarttls = port === 587 || port === 25;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -142,20 +157,35 @@ async function sendSmtp(opts: {
   await readResponse(); // 354
 
   const boundary = `b_${Date.now()}`;
-  const body = [
+  const hasAttachments = attachments && attachments.length > 0;
+  const lines: string[] = [
     `From: Rezerwacje Lafrentz <${from}>`,
     `To: ${to}`,
     `Subject: ${subject}`,
     `MIME-Version: 1.0`,
-    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
     '',
     `--${boundary}`,
     `Content-Type: text/html; charset=UTF-8`,
     '',
     html,
     '',
-    `--${boundary}--`,
-  ].join('\r\n');
+  ];
+  if (hasAttachments) {
+    for (const att of attachments!) {
+      lines.push(
+        `--${boundary}`,
+        `Content-Type: ${att.contentType}`,
+        `Content-Disposition: attachment; filename="${att.filename}"`,
+        `Content-Transfer-Encoding: base64`,
+        '',
+        toBase64(att.content),
+        '',
+      );
+    }
+  }
+  lines.push(`--${boundary}--`);
+  const body = lines.join('\r\n');
 
   await writeLine(body);
   await writeLine('.');
@@ -300,4 +330,65 @@ export function tplAccountCreated(params: {
 <p>Przy pierwszym logowaniu zostaniesz poproszony o zmianę hasła.</p>
 <p><a href="${params.appUrl}/login">Zaloguj się →</a></p>`,
   };
+}
+
+export function tplDutyOff(params: {
+  adminName: string;
+}): { subject: string; html: string } {
+  return {
+    subject: `Dyżur wyłączony — ${params.adminName}`,
+    html: `<p><strong>${params.adminName}</strong> wyłączył(a) dyżur.</p>
+<p>Upewnij się, że ktoś inny przejmie obowiązki obsługi wniosków o rezerwację.</p>`,
+  };
+}
+
+export function tplAttendeeInvite(params: {
+  roomName: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  organizer: string;
+}): { subject: string; html: string } {
+  return {
+    subject: `Zaproszenie na spotkanie — ${params.roomName} (${params.date})`,
+    html: `<p>Twój adres e-mail został dodany do spotkania.</p>
+<ul>
+  <li><strong>Sala:</strong> ${params.roomName}</li>
+  <li><strong>Data:</strong> ${params.date}</li>
+  <li><strong>Godziny:</strong> ${params.startTime}–${params.endTime}</li>
+  <li><strong>Organizator:</strong> ${params.organizer}</li>
+</ul>
+<p>W załączniku znajdziesz plik kalendarza — możesz go otworzyć, aby dodać spotkanie do swojego kalendarza.</p>`,
+  };
+}
+
+export function generateICS(params: {
+  uid: string;
+  summary: string;
+  location: string;
+  date: string;       // YYYY-MM-DD
+  startTime: string;  // HH:MM
+  endTime: string;    // HH:MM
+  description?: string;
+}): string {
+  const dt = (date: string, time: string) =>
+    `${date.replace(/-/g, '')}T${time.replace(':', '')}00`;
+  const now = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15) + 'Z';
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Lafrentz//Rezerwacje Sal//PL',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    `UID:${params.uid}`,
+    `DTSTAMP:${now}`,
+    `DTSTART;TZID=Europe/Warsaw:${dt(params.date, params.startTime)}`,
+    `DTEND;TZID=Europe/Warsaw:${dt(params.date, params.endTime)}`,
+    `SUMMARY:${params.summary}`,
+    `LOCATION:${params.location}`,
+  ];
+  if (params.description) lines.push(`DESCRIPTION:${params.description}`);
+  lines.push('END:VEVENT', 'END:VCALENDAR');
+  return lines.join('\r\n');
 }

@@ -3,7 +3,7 @@ import type { Route } from "./+types/rezerwacje.nowa";
 import { getTokenFromRequest, getSessionUser, requireUser } from "~/lib/auth.server";
 import { queryAll, queryOne, execute } from "~/lib/db.server";
 import { logAction } from "~/lib/audit.server";
-import { sendEmail, tplNewRequest } from "~/lib/email.server";
+import { sendEmail, tplNewRequest, tplApproved, generateICS } from "~/lib/email.server";
 import { canDirectBookBoardRoom, canDirectBookGeneralRoom } from "~/types";
 import type { Room, User } from "~/types";
 
@@ -44,10 +44,6 @@ export async function action({ request, context }: Route.ActionArgs) {
   const endTime = form.get("end_time") as string;
   const title = (form.get("title") as string)?.trim() || null;
   const attendeeCount = form.get("attendee_count") ? parseInt(form.get("attendee_count") as string, 10) : null;
-  const attendeeEmailsRaw = (form.get("attendee_emails") as string)?.trim();
-  const attendeeEmails = attendeeEmailsRaw
-    ? JSON.stringify(attendeeEmailsRaw.split(/[,\n]/).map(e => e.trim()).filter(Boolean))
-    : null;
   const requesterNote = (form.get("requester_note") as string)?.trim() || null;
 
   if (!roomId || !date || !startTime || !endTime) {
@@ -83,10 +79,10 @@ export async function action({ request, context }: Route.ActionArgs) {
     env.DB,
     `INSERT INTO bookings
        (room_id, requester_id, created_by_admin_id, title, date, start_time, end_time,
-        attendee_count, attendee_emails, status, requester_note)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        attendee_count, status, requester_note)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [roomId, user.id, isDirect ? user.id : null, title, date, startTime, endTime,
-     attendeeCount, attendeeEmails, status, requesterNote]
+     attendeeCount, status, requesterNote]
   );
 
   const bookingId = result.meta.last_row_id as number;
@@ -100,31 +96,43 @@ export async function action({ request, context }: Route.ActionArgs) {
     ipAddress: request.headers.get('CF-Connecting-IP'),
   });
 
-  // Notify admins if pending
+  const appUrl = new URL(request.url).origin;
+
   if (status === 'pending') {
+    // Notify admins of the new request
     const onDutyAdmins = await queryAll<{ email: string }>(
       env.DB,
       `SELECT email FROM users WHERE role IN ('admin','super_admin') AND is_active = 1 AND on_duty = 1`
     );
-    const notifyAdmins = onDutyAdmins.length > 0
-      ? onDutyAdmins
-      : await queryAll<{ email: string }>(
-          env.DB,
-          `SELECT email FROM users WHERE role IN ('admin','super_admin') AND is_active = 1`
-        );
 
-    const appUrl = new URL(request.url).origin;
-    const tpl = tplNewRequest({
-      requesterName: user.name,
-      roomName: room.name,
+    if (onDutyAdmins.length > 0) {
+      const tpl = tplNewRequest({
+        requesterName: user.name,
+        roomName: room.name,
+        date,
+        startTime,
+        endTime,
+        note: requesterNote,
+        bookingId,
+        appUrl,
+      });
+      await sendEmail(env, { to: onDutyAdmins.map(a => a.email), ...tpl });
+    }
+  } else {
+    // Direct booking — confirm to requester, then separately to attendees
+    const ics = generateICS({
+      uid: `booking-${bookingId}@lafrentz`,
+      summary: title || room.name,
+      location: room.name,
       date,
       startTime,
       endTime,
-      note: requesterNote,
-      bookingId,
-      appUrl,
     });
-    await sendEmail(env, { to: notifyAdmins.map(a => a.email), ...tpl });
+    const icsAttachment = { filename: 'spotkanie.ics', content: ics, contentType: 'text/calendar; charset=UTF-8' };
+
+    const tpl = tplApproved({ roomName: room.name, date, startTime, endTime, adminNote: null });
+    await sendEmail(env, { to: user.email, ...tpl, attachments: [icsAttachment] });
+
   }
 
   return redirect(`/rezerwacje/${bookingId}`);
@@ -136,7 +144,7 @@ export default function NowaRezerwacja({ loaderData, actionData }: Route.Compone
   const pending = nav.state === "submitting";
 
   return (
-    <div className="max-w-xl mx-auto px-4 py-8">
+    <div className="w-full max-w-3xl mx-auto px-8 py-8">
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Nowa rezerwacja</h1>
 
       <Form method="post" className="space-y-5 bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
@@ -205,21 +213,10 @@ export default function NowaRezerwacja({ loaderData, actionData }: Route.Compone
           <label className="block text-sm font-medium text-gray-700 mb-1">Liczba uczestników</label>
           <input
             name="attendee_count"
-            type="number"
-            min="1"
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Adresy e-mail uczestników <span className="text-gray-400 font-normal">(opcjonalnie, oddzielone przecinkami)</span>
-          </label>
-          <textarea
-            name="attendee_emails"
-            rows={2}
-            placeholder="jan.kowalski@lafrentz.pl, anna.nowak@lafrentz.pl"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none"
           />
         </div>
 

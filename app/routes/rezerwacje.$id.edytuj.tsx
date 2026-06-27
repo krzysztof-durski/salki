@@ -51,10 +51,6 @@ export async function action({ params, request, context }: Route.ActionArgs) {
   const endTime = form.get("end_time") as string;
   const title = (form.get("title") as string)?.trim() || null;
   const attendeeCount = form.get("attendee_count") ? parseInt(form.get("attendee_count") as string, 10) : null;
-  const attendeeEmailsRaw = (form.get("attendee_emails") as string)?.trim();
-  const attendeeEmails = attendeeEmailsRaw
-    ? JSON.stringify(attendeeEmailsRaw.split(/[,\n]/).map(e => e.trim()).filter(Boolean))
-    : null;
   const requesterNote = (form.get("requester_note") as string)?.trim() || null;
   const adminNote = (form.get("admin_note") as string)?.trim() || null;
   // "none" | "organiser" | "all"
@@ -94,10 +90,10 @@ export async function action({ params, request, context }: Route.ActionArgs) {
     const result = await execute(
       env.DB,
       `UPDATE bookings
-       SET room_id=?, date=?, start_time=?, end_time=?, title=?, attendee_count=?, attendee_emails=?,
+       SET room_id=?, date=?, start_time=?, end_time=?, title=?, attendee_count=?,
            requester_note=?, admin_note=?, version=version+1, updated_at=CURRENT_TIMESTAMP
        WHERE id=? AND version=?`,
-      [targetRoomId, date, startTime, endTime, title, attendeeCount, attendeeEmails,
+      [targetRoomId, date, startTime, endTime, title, attendeeCount,
        requesterNote, adminNote, bookingId, version]
     );
     if (!result.meta.changes) {
@@ -110,21 +106,17 @@ export async function action({ params, request, context }: Route.ActionArgs) {
       const appUrl = new URL(request.url).origin;
       const tpl = tplBookingEdited({ roomName: room!.name, date, startTime, endTime, adminNote, bookingId, appUrl });
 
-      const recipients: string[] = [booking.requester_email];
-      if (notify === "all" && booking.attendee_emails) {
-        try { recipients.push(...JSON.parse(booking.attendee_emails)); } catch {}
-      }
-      await sendEmail(env, { to: recipients, ...tpl });
+      await sendEmail(env, { to: booking.requester_email, ...tpl });
     }
   } else {
     // Regular user: only pending, own booking, no room change
     const result = await execute(
       env.DB,
       `UPDATE bookings
-       SET date=?, start_time=?, end_time=?, title=?, attendee_count=?, attendee_emails=?,
+       SET date=?, start_time=?, end_time=?, title=?, attendee_count=?,
            requester_note=?, version=version+1, updated_at=CURRENT_TIMESTAMP
        WHERE id=? AND version=? AND status='pending' AND requester_id=?`,
-      [date, startTime, endTime, title, attendeeCount, attendeeEmails, requesterNote, bookingId, version, user.id]
+      [date, startTime, endTime, title, attendeeCount, requesterNote, bookingId, version, user.id]
     );
     if (!result.meta.changes) {
       return data({
@@ -148,12 +140,9 @@ export default function EdytujRezerwacje({ loaderData, actionData }: Route.Compo
   const { booking, isAdminUser, rooms } = loaderData;
   const nav = useNavigation();
   const pending = nav.state === "submitting";
-  const attendeeEmailsParsed = booking.attendee_emails
-    ? (JSON.parse(booking.attendee_emails) as string[]).join(', ')
-    : '';
 
   return (
-    <div className="max-w-xl mx-auto px-4 py-8">
+    <div className="w-full max-w-3xl mx-auto px-8 py-8">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">
           {isAdminUser ? "Edytuj rezerwację" : "Edytuj wniosek"}
@@ -205,12 +194,7 @@ export default function EdytujRezerwacje({ loaderData, actionData }: Route.Compo
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Liczba uczestników</label>
-          <input name="attendee_count" type="number" min="1" defaultValue={booking.attendee_count ?? ''} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Adresy e-mail uczestników</label>
-          <textarea name="attendee_emails" rows={2} defaultValue={attendeeEmailsParsed} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+          <input name="attendee_count" type="text" inputMode="numeric" pattern="[0-9]*" defaultValue={booking.attendee_count ?? ''} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
         </div>
 
         <div>
@@ -232,7 +216,6 @@ export default function EdytujRezerwacje({ loaderData, actionData }: Route.Compo
                 {[
                   { value: "none",      label: "Nie wysyłaj" },
                   { value: "organiser", label: "Wyślij do organizatora" },
-                  { value: "all",       label: "Wyślij do organizatora i wszystkich uczestników" },
                 ].map(opt => (
                   <label key={opt.value} className="flex items-center gap-2.5 cursor-pointer text-sm text-gray-700">
                     <input

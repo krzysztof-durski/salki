@@ -91,13 +91,18 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
 
 function getMonday(d: Date): Date {
   const date = new Date(d);
-  const day = date.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  date.setDate(date.getDate() + diff);
+  const day = date.getDay(); // 0=Sun, 6=Sat
+  // On weekends the work week is over — jump to next Monday
+  if (day === 6) { date.setDate(date.getDate() + 2); }
+  else if (day === 0) { date.setDate(date.getDate() + 1); }
+  else { date.setDate(date.getDate() + (1 - day)); }
   date.setHours(0, 0, 0, 0);
   return date;
 }
 
 function toDateString(d: Date): string {
-  return d.toISOString().split('T')[0];
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }

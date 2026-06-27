@@ -5,6 +5,10 @@ export default [
   route("login",  "routes/login.tsx"),
   route("logout", "routes/logout.tsx"),
 
+  // API
+  route("api/pending-count",  "routes/api.pending-count.ts"),
+  route("api/notifications",  "routes/api.notifications.ts"),
+
   // Authenticated app shell
   layout("routes/_app.tsx", [
     index("routes/dashboard.tsx"),
@@ -13,6 +17,7 @@ export default [
     route("rezerwacje/:id/edytuj",         "routes/rezerwacje.$id.edytuj.tsx"),
     route("rezerwacje/:id/zmiana",         "routes/rezerwacje.$id.zmiana.tsx"),
     route("ustawienia",                    "routes/ustawienia.tsx"),
+    route("powiadomienia",                 "routes/powiadomienia.tsx"),
 
     // Admin routes (admin + super_admin)
     ...prefix("admin", [

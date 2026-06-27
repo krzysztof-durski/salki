@@ -1,23 +1,118 @@
 import { Outlet, Link, Form, useLocation, NavLink } from "react-router";
 import type { Route } from "./+types/_app";
 import { getTokenFromRequest, getSessionUser, requireUser } from "~/lib/auth.server";
+import { queryOne } from "~/lib/db.server";
 import { canManageBookings, canManageUsers, canViewAuditLogs, canManageRooms } from "~/types";
 import {
   CalendarDays, Settings, LogOut, Users, DoorOpen, ScrollText, ClipboardList, Menu, X, Bell, CalendarRange
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+
+function playChime() {
+  try {
+    const ctx = new AudioContext();
+    const notes = [523.25, 659.25, 783.99]; // C5 E5 G5
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = freq;
+      const t = ctx.currentTime + i * 0.18;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.22, t + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.85);
+      osc.start(t);
+      osc.stop(t + 0.9);
+    });
+  } catch {
+    // AudioContext blocked or unavailable
+  }
+}
 
 export async function loader({ request, context }: Route.LoaderArgs) {
   const { env } = context.cloudflare;
   const token = getTokenFromRequest(request);
   const user = requireUser(await getSessionUser(env.DB, token));
-  return { user };
+
+  let pendingCount = 0;
+  if (canManageBookings(user.role)) {
+    const row = await queryOne<{ n: number }>(
+      env.DB,
+      "SELECT COUNT(*) AS n FROM bookings WHERE status IN ('pending','counter_proposed')"
+    );
+    pendingCount = row?.n ?? 0;
+  }
+
+  const notifRow = await queryOne<{ n: number }>(
+    env.DB,
+    "SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND is_read = 0",
+    [user.id]
+  );
+  const notifCount = notifRow?.n ?? 0;
+
+  return { user, pendingCount, notifCount };
 }
 
 export default function AppShell({ loaderData }: Route.ComponentProps) {
-  const { user } = loaderData;
+  const { user, pendingCount, notifCount } = loaderData;
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [livePendingCount, setLivePendingCount] = useState(pendingCount);
+  const [liveNotifCount, setLiveNotifCount] = useState(notifCount);
+  const knownPendingRef = useRef(pendingCount);
+  const knownNotifRef = useRef(notifCount);
+
+  useEffect(() => {
+    if (!canManageBookings(user.role)) return;
+
+    async function poll() {
+      try {
+        const res = await fetch('/api/pending-count');
+        const { count } = await res.json() as { count: number };
+        if (count > knownPendingRef.current) playChime();
+        knownPendingRef.current = count;
+        setLivePendingCount(count);
+      } catch { /* ignore */ }
+    }
+
+    const id = setInterval(poll, 20_000);
+    return () => clearInterval(id);
+  }, [user.role]);
+
+  useEffect(() => {
+    async function poll() {
+      try {
+        const res = await fetch('/api/notifications');
+        const { count } = await res.json() as { count: number };
+        if (count > knownNotifRef.current) playChime();
+        knownNotifRef.current = count;
+        setLiveNotifCount(count);
+      } catch { /* ignore */ }
+    }
+
+    const id = setInterval(poll, 20_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Reset notif count when user navigates somewhere that marks them read
+  useEffect(() => {
+    const clearsNotifs =
+      location.pathname === '/powiadomienia' ||
+      /^\/rezerwacje\/\d+$/.test(location.pathname);
+    if (clearsNotifs) {
+      setLiveNotifCount(0);
+      knownNotifRef.current = 0;
+    }
+  }, [location.pathname]);
+
+  useEffect(() => {
+    const base = 'Rezerwacja Sal';
+    const total = livePendingCount + liveNotifCount;
+    document.title = total > 0 ? `(${total}) ${base}` : base;
+    return () => { document.title = base; };
+  }, [livePendingCount, liveNotifCount]);
 
   const nav = [
     { to: "/", label: "Kalendarz", icon: CalendarDays },
@@ -26,6 +121,7 @@ export default function AppShell({ loaderData }: Route.ComponentProps) {
     ...(canManageUsers(user.role)    ? [{ to: "/admin/uzytkownicy", label: "Użytkownicy", icon: Users }] : []),
     ...(canManageRooms(user.role)    ? [{ to: "/admin/sale", label: "Sale", icon: DoorOpen }] : []),
     ...(canViewAuditLogs(user.role)  ? [{ to: "/admin/logi", label: "Logi", icon: ScrollText }] : []),
+    { to: "/powiadomienia", label: "Powiadomienia", icon: Bell },
     { to: "/ustawienia", label: "Ustawienia", icon: Settings },
   ];
 
@@ -33,26 +129,39 @@ export default function AppShell({ loaderData }: Route.ComponentProps) {
     <div className="flex h-screen overflow-hidden bg-gray-50">
       {/* Sidebar desktop */}
       <aside className="hidden md:flex flex-col w-60 shrink-0 bg-white border-r border-gray-200">
-        <div className="flex items-center h-16 px-4 border-b border-gray-200">
+        <Link to="/" className="flex flex-col items-center justify-center h-20 px-4 border-b border-gray-200 hover:bg-gray-50 transition-colors">
           <img src="/assets/Lafrentz - logo podstawowe RGB.svg" alt="Lafrentz" className="h-8" />
-        </div>
+          <span className="text-[11px] font-bold text-gray-600 tracking-[0.2em] uppercase mt-1">Rezerwacja Sal</span>
+        </Link>
 
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {nav.map(({ to, label, icon: Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={to === "/"}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  isActive ? "bg-blue-50 text-blue-700" : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-                }`
-              }
-            >
-              <Icon size={18} />
-              {label}
-            </NavLink>
-          ))}
+          {nav.map(({ to, label, icon: Icon }) => {
+            const isPending = to === "/admin/rezerwacje" && livePendingCount > 0;
+            const isNotif   = to === "/powiadomienia"   && liveNotifCount > 0;
+            const hasBadge  = isPending || isNotif;
+            const badgeCount = isPending ? livePendingCount : liveNotifCount;
+            return (
+              <NavLink
+                key={to}
+                to={to}
+                end={to === "/"}
+                className={({ isActive }) => {
+                  const base = "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors";
+                  if (isActive) return `${base} bg-blue-50 text-blue-700`;
+                  if (hasBadge) return `${base} text-amber-700 hover:bg-amber-50 nav-blink`;
+                  return `${base} text-gray-600 hover:bg-gray-100 hover:text-gray-900`;
+                }}
+              >
+                <Icon size={18} />
+                <span className="flex-1">{label}</span>
+                {hasBadge && (
+                  <span className="bg-amber-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[1.25rem] text-center leading-none">
+                    {badgeCount}
+                  </span>
+                )}
+              </NavLink>
+            );
+          })}
         </nav>
 
         <div className="border-t border-gray-200 px-3 py-4">
@@ -62,7 +171,7 @@ export default function AppShell({ loaderData }: Route.ComponentProps) {
             </Form>
           )}
           <div className="flex items-center gap-3 px-3 py-2 mb-1">
-            <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-sm font-semibold select-none">
+            <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-sm font-semibold select-none shrink-0">
               {user.name.charAt(0).toUpperCase()}
             </div>
             <div className="min-w-0">
@@ -95,22 +204,34 @@ export default function AppShell({ loaderData }: Route.ComponentProps) {
         <div className="md:hidden fixed inset-0 z-20 bg-black/40" onClick={() => setMobileOpen(false)}>
           <aside className="absolute left-0 top-0 bottom-0 w-64 bg-white shadow-xl pt-14 flex flex-col" onClick={e => e.stopPropagation()}>
             <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-              {nav.map(({ to, label, icon: Icon }) => (
-                <NavLink
-                  key={to}
-                  to={to}
-                  end={to === "/"}
-                  onClick={() => setMobileOpen(false)}
-                  className={({ isActive }) =>
-                    `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      isActive ? "bg-blue-50 text-blue-700" : "text-gray-600 hover:bg-gray-100"
-                    }`
-                  }
-                >
-                  <Icon size={18} />
-                  {label}
-                </NavLink>
-              ))}
+              {nav.map(({ to, label, icon: Icon }) => {
+                const isPending = to === "/admin/rezerwacje" && livePendingCount > 0;
+                const isNotif   = to === "/powiadomienia"   && liveNotifCount > 0;
+                const hasBadge  = isPending || isNotif;
+                const badgeCount = isPending ? livePendingCount : liveNotifCount;
+                return (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    end={to === "/"}
+                    onClick={() => setMobileOpen(false)}
+                    className={({ isActive }) => {
+                      const base = "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors";
+                      if (isActive) return `${base} bg-blue-50 text-blue-700`;
+                      if (hasBadge) return `${base} text-amber-700 hover:bg-amber-50 nav-blink`;
+                      return `${base} text-gray-600 hover:bg-gray-100`;
+                    }}
+                  >
+                    <Icon size={18} />
+                    <span className="flex-1">{label}</span>
+                    {hasBadge && (
+                      <span className="bg-amber-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[1.25rem] text-center leading-none">
+                        {badgeCount}
+                      </span>
+                    )}
+                  </NavLink>
+                );
+              })}
             </nav>
             <div className="border-t border-gray-200 px-3 py-4">
               <Form method="post" action="/logout">

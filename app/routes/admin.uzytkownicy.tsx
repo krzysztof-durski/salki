@@ -1,4 +1,4 @@
-import { redirect, data, Form, useNavigation } from "react-router";
+import { redirect, data, Form, useNavigation, useFetcher } from "react-router";
 import { useState, useEffect } from "react";
 import type { Route } from "./+types/admin.uzytkownicy";
 import { getTokenFromRequest, getSessionUser, requireUser, hashPassword, generateToken } from "~/lib/auth.server";
@@ -7,7 +7,7 @@ import { logAction } from "~/lib/audit.server";
 import { sendEmail, tplAccountCreated } from "~/lib/email.server";
 import { canManageUsers, assignableRoles, ROLE_LABELS } from "~/types";
 import type { User } from "~/types";
-import { Plus, ToggleLeft, ToggleRight, Trash2, Copy, Check, X, KeyRound } from "lucide-react";
+import { Plus, ToggleLeft, ToggleRight, Trash2, Copy, Check, X, KeyRound, Pencil } from "lucide-react";
 
 export async function loader({ request, context }: Route.LoaderArgs) {
   const { env } = context.cloudflare;
@@ -68,6 +68,20 @@ export async function action({ request, context }: Route.ActionArgs) {
     if (!allowed.includes(role)) return data({ error: "Brak uprawnień do przypisania tej roli." }, { status: 403 });
     await execute(env.DB, "UPDATE users SET name=?, role=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", [name, role, userId]);
     await logAction(env.DB, { userId: actor.id, action: 'user.edited', entityType: 'user', entityId: userId });
+  }
+
+  else if (_action === "edit_profile") {
+    const userId = parseInt(form.get("user_id") as string, 10);
+    const name = (form.get("name") as string)?.trim();
+    const email = (form.get("email") as string)?.trim().toLowerCase();
+    if (!name || !email) return data({ error: "Imię i adres e-mail są wymagane." }, { status: 400 });
+    try {
+      await execute(env.DB, "UPDATE users SET name=?, email=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", [name, email, userId]);
+    } catch {
+      return data({ error: "Adres e-mail jest już zajęty." }, { status: 409 });
+    }
+    await logAction(env.DB, { userId: actor.id, action: 'user.profile_edited', entityType: 'user', entityId: userId });
+    return data({ success: true });
   }
 
   else if (_action === "toggle_active") {
@@ -237,77 +251,166 @@ function UserRow({ u, currentUser, allowedRoles, pending }: {
   u: User; currentUser: User; allowedRoles: User['role'][]; pending: boolean;
 }) {
   const isSelf = u.id === currentUser.id;
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState(u.name);
+  const [editEmail, setEditEmail] = useState(u.email);
+  const fetcher = useFetcher();
+  const saving = fetcher.state === 'submitting';
+
+  useEffect(() => {
+    if (fetcher.state === 'idle' && fetcher.data && 'success' in fetcher.data) {
+      setEditing(false);
+    }
+  }, [fetcher.state, fetcher.data]);
+
+  useEffect(() => {
+    if (!editing) {
+      setEditName(u.name);
+      setEditEmail(u.email);
+    }
+  }, [u.name, u.email, editing]);
+
+  function handleSave() {
+    const fd = new FormData();
+    fd.set('_action', 'edit_profile');
+    fd.set('user_id', String(u.id));
+    fd.set('name', editName.trim());
+    fd.set('email', editEmail.trim().toLowerCase());
+    fetcher.submit(fd, { method: 'post' });
+  }
+
+  const fetcherError = fetcher.data && 'error' in fetcher.data ? fetcher.data.error : null;
 
   return (
-    <tr className={u.is_active ? "" : "opacity-50"}>
-      <td className="px-4 py-3 font-medium text-gray-900">{u.name}</td>
-      <td className="px-4 py-3 text-gray-500">{u.email}</td>
-      <td className="px-4 py-3">
-        <Form method="post" className="inline-flex items-center gap-2">
-          <input type="hidden" name="_action" value="edit" />
-          <input type="hidden" name="user_id" value={u.id} />
-          <input type="hidden" name="name" value={u.name} />
-          <select
-            name="role"
-            defaultValue={u.role}
-            onChange={e => (e.currentTarget.form as HTMLFormElement).submit()}
-            className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-transparent focus:ring-2 focus:ring-blue-500 focus:outline-none"
-          >
-            {allowedRoles.includes(u.role) || currentUser.role === 'super_admin'
-              ? [...new Set([...allowedRoles, u.role])].map(r => (
-                  <option key={r} value={r} disabled={!allowedRoles.includes(r)}>
-                    {ROLE_LABELS[r]}
-                  </option>
-                ))
-              : <option value={u.role}>{ROLE_LABELS[u.role]}</option>
-            }
-          </select>
-        </Form>
-      </td>
-      <td className="px-4 py-3">
-        <span className={`text-xs px-2 py-0.5 rounded-full ${u.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'}`}>
-          {u.is_active ? 'Aktywny' : 'Nieaktywny'}
-        </span>
-      </td>
-      <td className="px-4 py-3 text-right">
-        <div className="flex items-center justify-end gap-3">
-          {!isSelf && (
-            <Form method="post" className="inline">
-              <input type="hidden" name="_action" value="toggle_active" />
-              <input type="hidden" name="user_id" value={u.id} />
-              <button type="submit" disabled={pending} title={u.is_active ? "Dezaktywuj" : "Aktywuj"} className="text-gray-400 hover:text-gray-700 transition-colors">
-                {u.is_active ? <ToggleRight size={18} className="text-green-500" /> : <ToggleLeft size={18} />}
-              </button>
-            </Form>
-          )}
-          {!isSelf && (
-            <Form
-              method="post"
-              className="inline"
-              onSubmit={e => { if (!window.confirm(`Zresetować hasło użytkownika ${u.name}? Nowe hasło zostanie pokazane w baneże.`)) e.preventDefault(); }}
+    <>
+      <tr className={u.is_active ? "" : "opacity-50"}>
+        <td className="px-4 py-3 font-medium text-gray-900">
+          {editing ? (
+            <input
+              value={editName}
+              onChange={e => setEditName(e.target.value)}
+              className="border border-gray-300 rounded-lg px-2 py-1 text-sm w-full focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            />
+          ) : u.name}
+        </td>
+        <td className="px-4 py-3 text-gray-500">
+          {editing ? (
+            <input
+              type="email"
+              value={editEmail}
+              onChange={e => setEditEmail(e.target.value)}
+              className="border border-gray-300 rounded-lg px-2 py-1 text-sm w-full focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            />
+          ) : u.email}
+        </td>
+        <td className="px-4 py-3">
+          <Form method="post" className="inline-flex items-center gap-2">
+            <input type="hidden" name="_action" value="edit" />
+            <input type="hidden" name="user_id" value={u.id} />
+            <input type="hidden" name="name" value={u.name} />
+            <select
+              name="role"
+              defaultValue={u.role}
+              onChange={e => (e.currentTarget.form as HTMLFormElement).submit()}
+              className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-transparent focus:ring-2 focus:ring-blue-500 focus:outline-none"
             >
-              <input type="hidden" name="_action" value="reset_password" />
-              <input type="hidden" name="user_id" value={u.id} />
-              <button type="submit" disabled={pending} title="Resetuj hasło" className="text-gray-300 hover:text-blue-500 transition-colors">
-                <KeyRound size={16} />
-              </button>
-            </Form>
-          )}
-          {!isSelf && (
-            <Form
-              method="post"
-              className="inline"
-              onSubmit={e => { if (!window.confirm(`Usunąć użytkownika ${u.name}? Operacja jest nieodwracalna.`)) e.preventDefault(); }}
-            >
-              <input type="hidden" name="_action" value="delete_user" />
-              <input type="hidden" name="user_id" value={u.id} />
-              <button type="submit" disabled={pending} title="Usuń użytkownika" className="text-gray-300 hover:text-red-500 transition-colors">
-                <Trash2 size={16} />
-              </button>
-            </Form>
-          )}
-        </div>
-      </td>
-    </tr>
+              {allowedRoles.includes(u.role) || currentUser.role === 'super_admin'
+                ? [...new Set([...allowedRoles, u.role])].map(r => (
+                    <option key={r} value={r} disabled={!allowedRoles.includes(r)}>
+                      {ROLE_LABELS[r]}
+                    </option>
+                  ))
+                : <option value={u.role}>{ROLE_LABELS[u.role]}</option>
+              }
+            </select>
+          </Form>
+        </td>
+        <td className="px-4 py-3">
+          <span className={`text-xs px-2 py-0.5 rounded-full ${u.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'}`}>
+            {u.is_active ? 'Aktywny' : 'Nieaktywny'}
+          </span>
+        </td>
+        <td className="px-4 py-3 text-right">
+          <div className="flex items-center justify-end gap-3">
+            {editing ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving || !editName.trim() || !editEmail.trim()}
+                  title="Zapisz"
+                  className="text-green-600 hover:text-green-800 disabled:opacity-40 transition-colors"
+                >
+                  <Check size={16} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setEditing(false); setEditName(u.name); setEditEmail(u.email); }}
+                  title="Anuluj"
+                  className="text-gray-400 hover:text-gray-700 transition-colors"
+                >
+                  <X size={16} />
+                </button>
+              </>
+            ) : (
+              <>
+                {!isSelf && (
+                  <button
+                    type="button"
+                    onClick={() => setEditing(true)}
+                    title="Edytuj imię i e-mail"
+                    className="text-gray-300 hover:text-blue-500 transition-colors"
+                  >
+                    <Pencil size={16} />
+                  </button>
+                )}
+                {!isSelf && (
+                  <Form method="post" className="inline">
+                    <input type="hidden" name="_action" value="toggle_active" />
+                    <input type="hidden" name="user_id" value={u.id} />
+                    <button type="submit" disabled={pending} title={u.is_active ? "Dezaktywuj" : "Aktywuj"} className="text-gray-400 hover:text-gray-700 transition-colors">
+                      {u.is_active ? <ToggleRight size={18} className="text-green-500" /> : <ToggleLeft size={18} />}
+                    </button>
+                  </Form>
+                )}
+                {!isSelf && (
+                  <Form
+                    method="post"
+                    className="inline"
+                    onSubmit={e => { if (!window.confirm(`Zresetować hasło użytkownika ${u.name}? Nowe hasło zostanie pokazane w baneże.`)) e.preventDefault(); }}
+                  >
+                    <input type="hidden" name="_action" value="reset_password" />
+                    <input type="hidden" name="user_id" value={u.id} />
+                    <button type="submit" disabled={pending} title="Resetuj hasło" className="text-gray-300 hover:text-blue-500 transition-colors">
+                      <KeyRound size={16} />
+                    </button>
+                  </Form>
+                )}
+                {!isSelf && (
+                  <Form
+                    method="post"
+                    className="inline"
+                    onSubmit={e => { if (!window.confirm(`Usunąć użytkownika ${u.name}? Operacja jest nieodwracalna.`)) e.preventDefault(); }}
+                  >
+                    <input type="hidden" name="_action" value="delete_user" />
+                    <input type="hidden" name="user_id" value={u.id} />
+                    <button type="submit" disabled={pending} title="Usuń użytkownika" className="text-gray-300 hover:text-red-500 transition-colors">
+                      <Trash2 size={16} />
+                    </button>
+                  </Form>
+                )}
+              </>
+            )}
+          </div>
+        </td>
+      </tr>
+      {editing && fetcherError && (
+        <tr>
+          <td colSpan={5} className="px-4 pb-2">
+            <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-3 py-1">{fetcherError}</p>
+          </td>
+        </tr>
+      )}
+    </>
   );
 }

@@ -73,13 +73,15 @@ export async function purgeExpiredSessions(db: CloudflareEnv['DB']): Promise<voi
 
 // ─── Cookie helpers ───────────────────────────────────────────────────────────
 
-export function setSessionCookie(token: string): string {
+export function setSessionCookie(token: string, request?: Request): string {
   const maxAge = SESSION_DURATION_HOURS * 3600;
-  return `${SESSION_COOKIE}=${token}; Max-Age=${maxAge}; Path=/; HttpOnly; Secure; SameSite=Strict`;
+  const secure = !request || new URL(request.url).protocol === 'https:';
+  return `${SESSION_COOKIE}=${token}; Max-Age=${maxAge}; Path=/; HttpOnly${secure ? '; Secure' : ''}; SameSite=Strict`;
 }
 
-export function clearSessionCookie(): string {
-  return `${SESSION_COOKIE}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Strict`;
+export function clearSessionCookie(request?: Request): string {
+  const secure = !request || new URL(request.url).protocol === 'https:';
+  return `${SESSION_COOKIE}=; Max-Age=0; Path=/; HttpOnly${secure ? '; Secure' : ''}; SameSite=Strict`;
 }
 
 export function getTokenFromRequest(request: Request): string {

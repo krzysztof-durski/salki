@@ -7,7 +7,7 @@ export async function action({ request, context }: Route.ActionArgs) {
   const token = getTokenFromRequest(request);
   if (token) await deleteSession(env.DB, token);
   return redirect("/login", {
-    headers: { "Set-Cookie": clearSessionCookie() },
+    headers: { "Set-Cookie": clearSessionCookie(request) },
   });
 }
 

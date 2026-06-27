@@ -3,7 +3,7 @@ import type { Route } from "./+types/rezerwacje.$id";
 import { getTokenFromRequest, getSessionUser, requireUser } from "~/lib/auth.server";
 import { queryOne, queryAll, execute } from "~/lib/db.server";
 import { logAction } from "~/lib/audit.server";
-import { sendEmail, tplApproved, tplRejected, tplCounterProposed } from "~/lib/email.server";
+import { sendEmail, tplApproved, tplRejected, tplCounterProposed, generateICS } from "~/lib/email.server";
 import { isAdmin, canManageBookings } from "~/types";
 import type { Booking, BookingChangeRequest, User } from "~/types";
 import { CheckCircle, XCircle, Clock, Edit2, RefreshCw, Trash2 } from "lucide-react";
@@ -28,6 +28,13 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
   if (booking.requester_id !== user.id && !isAdmin(user.role)) {
     throw new Response(null, { status: 403 });
   }
+
+  // Mark any unread notifications for this booking as read
+  await execute(
+    env.DB,
+    "UPDATE notifications SET is_read=1 WHERE user_id=? AND booking_id=? AND is_read=0",
+    [user.id, booking.id]
+  );
 
   const changeRequests = await queryAll<BookingChangeRequest>(
     env.DB,
@@ -83,14 +90,24 @@ export async function action({ params, request, context }: Route.ActionArgs) {
     if (!result.meta.changes) return data({ error: "Konflikt — wniosek został już przetworzony." }, { status: 409 });
 
     const room = await queryOne<{ name: string }>(env.DB, "SELECT name FROM rooms WHERE id=?", [booking.room_id]);
-    const requester = await queryOne<{ email: string }>(env.DB, "SELECT email FROM users WHERE id=?", [booking.requester_id]);
-    const emails: string[] = [requester!.email];
-    if (booking.attendee_emails) {
-      try { emails.push(...JSON.parse(booking.attendee_emails)); } catch {}
-    }
+    const requester = await queryOne<{ email: string; name: string }>(env.DB, "SELECT email, name FROM users WHERE id=?", [booking.requester_id]);
+
+    const ics = generateICS({
+      uid: `booking-${bookingId}@lafrentz`,
+      summary: booking.title || room!.name,
+      location: room!.name,
+      date: booking.date,
+      startTime: booking.start_time,
+      endTime: booking.end_time,
+    });
+    const icsAttachment = { filename: 'spotkanie.ics', content: ics, contentType: 'text/calendar; charset=UTF-8' };
 
     const tpl = tplApproved({ roomName: room!.name, date: booking.date, startTime: booking.start_time, endTime: booking.end_time, adminNote });
-    await sendEmail(env, { to: emails, ...tpl });
+    await sendEmail(env, { to: requester!.email, ...tpl, attachments: [icsAttachment] });
+    await execute(env.DB,
+      "INSERT INTO notifications (user_id, booking_id, type) VALUES (?,?,'booking_approved')",
+      [booking.requester_id, bookingId]
+    );
     await logAction(env.DB, { userId: user.id, action: 'booking.approved', entityType: 'booking', entityId: bookingId });
   }
 
@@ -109,6 +126,10 @@ export async function action({ params, request, context }: Route.ActionArgs) {
     const requester = await queryOne<{ email: string }>(env.DB, "SELECT email FROM users WHERE id=?", [booking.requester_id]);
     const tpl = tplRejected({ roomName: room!.name, date: booking.date, adminNote });
     await sendEmail(env, { to: requester!.email, ...tpl });
+    await execute(env.DB,
+      "INSERT INTO notifications (user_id, booking_id, type) VALUES (?,?,'booking_rejected')",
+      [booking.requester_id, bookingId]
+    );
     await logAction(env.DB, { userId: user.id, action: 'booking.rejected', entityType: 'booking', entityId: bookingId });
   }
 
@@ -136,6 +157,10 @@ export async function action({ params, request, context }: Route.ActionArgs) {
       counterDate, counterStart, counterEnd, adminNote, bookingId, appUrl,
     });
     await sendEmail(env, { to: requester!.email, ...tpl });
+    await execute(env.DB,
+      "INSERT INTO notifications (user_id, booking_id, type) VALUES (?,?,'counter_proposed')",
+      [booking.requester_id, bookingId]
+    );
     await logAction(env.DB, { userId: user.id, action: 'booking.counter_proposed', entityType: 'booking', entityId: bookingId });
   }
 
@@ -180,7 +205,8 @@ export async function action({ params, request, context }: Route.ActionArgs) {
   }
 
   else if (_action === "delete") {
-    if (!canManageBookings(user.role)) throw new Response(null, { status: 403 });
+    const isOwner = booking.requester_id === user.id;
+    if (!isOwner && !canManageBookings(user.role)) throw new Response(null, { status: 403 });
     await logAction(env.DB, {
       userId: user.id,
       action: 'booking.deleted',
@@ -189,7 +215,7 @@ export async function action({ params, request, context }: Route.ActionArgs) {
       details: { room_id: booking.room_id, date: booking.date, status: booking.status },
     });
     await execute(env.DB, "DELETE FROM bookings WHERE id = ?", [bookingId]);
-    return redirect("/admin/panel");
+    return redirect(canManageBookings(user.role) ? "/admin/panel" : "/");
   }
 
   return redirect(`/rezerwacje/${bookingId}`);
@@ -216,7 +242,7 @@ export default function BookingDetail({ loaderData, actionData }: Route.Componen
   const isAdminUser = isAdmin(user.role);
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
+    <div className="w-full max-w-3xl mx-auto px-8 py-8 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Rezerwacja #{booking.id}</h1>
         <Link to="/" className="text-sm text-gray-500 hover:text-gray-700">← Kalendarz</Link>
@@ -274,7 +300,7 @@ export default function BookingDetail({ loaderData, actionData }: Route.Componen
             <Edit2 size={14} /> {isAdminUser && !isOwner ? "Edytuj rezerwację" : "Edytuj wniosek"}
           </Link>
         )}
-        {isAdminUser && (
+        {(isOwner || isAdminUser) && (
           <Form
             method="post"
             onSubmit={e => { if (!window.confirm("Usunąć tę rezerwację? Operacja jest nieodwracalna.")) e.preventDefault(); }}
