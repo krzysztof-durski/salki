@@ -1,5 +1,4 @@
 name = "salki"
-account_id = "cb53e66ca99cd969f70d9b5bfbc30f6d"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = "build/client"
