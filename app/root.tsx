@@ -42,9 +42,11 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
 
   if (isRouteErrorResponse(error)) {
     status = error.status;
-    message = error.status === 404 ? "Nie znaleziono strony." : error.statusText || message;
+    message = JSON.stringify({ status: error.status, statusText: error.statusText, data: error.data });
   } else if (error instanceof Error) {
-    message = error.message;
+    message = error.message + '\n' + error.stack;
+  } else {
+    message = JSON.stringify(error);
   }
 
   return (
