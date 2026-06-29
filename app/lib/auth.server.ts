@@ -3,6 +3,7 @@ import type { User } from '~/types';
 
 const SESSION_COOKIE = 'session';
 const SESSION_DURATION_HOURS = 24;
+const SESSION_DURATION_LONG_DAYS = 30;
 
 // ─── Password ────────────────────────────────────────────────────────────────
 
@@ -44,9 +45,12 @@ export function generateToken(bytes = 32): string {
 
 // ─── Session ─────────────────────────────────────────────────────────────────
 
-export async function createSession(db: CloudflareEnv['DB'], userId: number): Promise<string> {
+export async function createSession(db: CloudflareEnv['DB'], userId: number, rememberMe = false): Promise<string> {
   const id = generateToken(32);
-  const expiresAt = new Date(Date.now() + SESSION_DURATION_HOURS * 3600 * 1000).toISOString();
+  const ms = rememberMe
+    ? SESSION_DURATION_LONG_DAYS * 86400 * 1000
+    : SESSION_DURATION_HOURS * 3600 * 1000;
+  const expiresAt = new Date(Date.now() + ms).toISOString();
   await execute(db, 'INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)', [id, userId, expiresAt]);
   return id;
 }
@@ -73,8 +77,10 @@ export async function purgeExpiredSessions(db: CloudflareEnv['DB']): Promise<voi
 
 // ─── Cookie helpers ───────────────────────────────────────────────────────────
 
-export function setSessionCookie(token: string, request?: Request): string {
-  const maxAge = SESSION_DURATION_HOURS * 3600;
+export function setSessionCookie(token: string, request?: Request, rememberMe = false): string {
+  const maxAge = rememberMe
+    ? SESSION_DURATION_LONG_DAYS * 86400
+    : SESSION_DURATION_HOURS * 3600;
   const secure = !request || new URL(request.url).protocol === 'https:';
   return `${SESSION_COOKIE}=${token}; Max-Age=${maxAge}; Path=/; HttpOnly${secure ? '; Secure' : ''}; SameSite=Strict`;
 }

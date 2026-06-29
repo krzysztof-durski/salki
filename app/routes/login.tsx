@@ -17,6 +17,7 @@ export async function action({ request, context }: Route.ActionArgs) {
   const form = await request.formData();
   const email = (form.get("email") as string)?.trim().toLowerCase();
   const password = form.get("password") as string;
+  const rememberMe = form.get("rememberMe") === "on";
 
   if (!email || !password) {
     return data({ error: "Wypełnij wszystkie pola." }, { status: 400 });
@@ -27,9 +28,9 @@ export async function action({ request, context }: Route.ActionArgs) {
     return data({ error: "Nieprawidłowy e-mail lub hasło." }, { status: 401 });
   }
 
-  const token = await createSession(env.DB, user.id);
+  const token = await createSession(env.DB, user.id, rememberMe);
   const headers = new Headers();
-  headers.set("Set-Cookie", setSessionCookie(token, request));
+  headers.set("Set-Cookie", setSessionCookie(token, request, rememberMe));
 
   if (user.must_change_password) {
     return redirect("/ustawienia?zmien-haslo=1", { headers });
@@ -77,6 +78,18 @@ export default function Login({ actionData }: Route.ComponentProps) {
               required
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              id="rememberMe"
+              name="rememberMe"
+              type="checkbox"
+              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <label htmlFor="rememberMe" className="text-sm text-gray-600">
+              Zapamiętaj mnie przez 30 dni
+            </label>
           </div>
 
           {actionData?.error && (
