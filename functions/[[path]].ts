@@ -5,12 +5,7 @@ import * as serverBuild from "../build/server";
 
 const handler = createPagesFunctionHandler({
   build: serverBuild,
-  getLoadContext: ({ context }) => ({
-    cloudflare: {
-      env: context.env as CloudflareEnv,
-      ctx: context.waitUntil ? context : ({} as ExecutionContext),
-    },
-  }),
+  getLoadContext: ({ context }) => context,
 });
 
 export const onRequest: PagesFunction<CloudflareEnv> = handler;
