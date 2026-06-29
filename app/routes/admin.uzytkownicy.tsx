@@ -1,5 +1,5 @@
 import { redirect, data, Form, useNavigation, useFetcher } from "react-router";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { Route } from "./+types/admin.uzytkownicy";
 import { getTokenFromRequest, getSessionUser, requireUser, hashPassword, generateToken } from "~/lib/auth.server";
 import { queryAll, queryOne, execute } from "~/lib/db.server";
@@ -8,6 +8,7 @@ import { sendEmail, tplAccountCreated } from "~/lib/email.server";
 import { canManageUsers, assignableRoles, ROLE_LABELS } from "~/types";
 import type { User } from "~/types";
 import { Plus, ToggleLeft, ToggleRight, Trash2, Copy, Check, X, KeyRound, Pencil } from "lucide-react";
+import { ConfirmModal } from "~/components/ConfirmModal";
 
 export async function loader({ request, context }: Route.LoaderArgs) {
   const { env } = context.cloudflare;
@@ -57,7 +58,7 @@ export async function action({ request, context }: Route.ActionArgs) {
     const tpl = tplAccountCreated({ name, tempPassword: tempPass, appUrl });
     const { sent: emailSent, error: emailError } = await sendEmail(env, { to: email, ...tpl });
     await logAction(env.DB, { userId: actor.id, action: 'user.created', entityType: 'user', details: { email, role } });
-    return data({ created: { name, email, tempPassword: tempPass, emailSent, emailError } });
+    return data({ created: { name, email, tempPassword: tempPass, emailSent, emailError, reason: 'created' as const } });
   }
 
   else if (_action === "edit") {
@@ -118,7 +119,7 @@ export async function action({ request, context }: Route.ActionArgs) {
     const tpl = tplAccountCreated({ name: target.name, tempPassword: tempPass, appUrl });
     const { sent: emailSent, error: emailError } = await sendEmail(env, { to: target.email, ...tpl });
     await logAction(env.DB, { userId: actor.id, action: 'user.password_reset', entityType: 'user', entityId: userId });
-    return data({ created: { name: target.name, email: target.email, tempPassword: tempPass, emailSent, emailError } });
+    return data({ created: { name: target.name, email: target.email, tempPassword: tempPass, emailSent, emailError, reason: 'reset' as const } });
   }
 
   else if (_action === "delete_user") {
@@ -154,21 +155,48 @@ export default function AdminUzytkownicy({ loaderData, actionData }: Route.Compo
   const pending = nav.state === "submitting";
   const allowedRoles = assignableRoles(currentUser.role);
   const [copied, setCopied] = useState(false);
+  const [copiedMsg, setCopiedMsg] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [confirm, setConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
+  const autoCopyRef = useRef(false);
 
   const created = actionData && 'created' in actionData ? actionData.created : null;
   const showBanner = !!created && !bannerDismissed;
 
-  // Reset dismissed state when a new user is successfully created
+  function buildMessage(c: NonNullable<typeof created>) {
+    if (c.reason === 'reset') {
+      return `Twoje hasło do Systemu Rezerwacji Salek Lafrentz (salki.lafrentz.pl) zostało zresetowane.\nDane do logowania:\nAdres e-mail: ${c.email}\nNowe hasło tymczasowe: ${c.tempPassword}\n\nPo zalogowaniu trzeba będzie ustawić nowe hasło. Jeśli masz problem z logowaniem, skontaktuj się z Administratorem.`;
+    }
+    return `Twoje konto do Systemu Rezerwacji Salek Lafrentz (salki.lafrentz.pl) zostało utworzone.\nDane do pierwszego logowania:\nAdres e-mail: ${c.email}\nHasło: ${c.tempPassword}\n\nPo pierwszym zalogowaniu trzeba będzie ustawić nowe hasło. Jeśli zapomnisz swoje hasło, skontaktuj się z Administratorem.`;
+  }
+
   useEffect(() => {
     if (created) setBannerDismissed(false);
   }, [created?.email]);
+
+  useEffect(() => {
+    if (!created || !autoCopyRef.current) return;
+    autoCopyRef.current = false;
+    navigator.clipboard.writeText(buildMessage(created)).then(() => {
+      setCopiedMsg(true);
+      setTimeout(() => setCopiedMsg(false), 2000);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [created?.tempPassword]);
 
   function copyPassword() {
     if (!created) return;
     navigator.clipboard.writeText(created.tempPassword).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  function copyMessage() {
+    if (!created) return;
+    navigator.clipboard.writeText(buildMessage(created)).then(() => {
+      setCopiedMsg(true);
+      setTimeout(() => setCopiedMsg(false), 2000);
     });
   }
 
@@ -182,7 +210,7 @@ export default function AdminUzytkownicy({ loaderData, actionData }: Route.Compo
           <div className="flex items-start justify-between gap-2">
             <div className="space-y-1">
               <p className="text-sm font-semibold text-green-900">
-                Konto utworzone — {created.name} ({created.email})
+                {created.reason === 'reset' ? 'Hasło zresetowane' : 'Konto utworzone'} — {created.name} ({created.email})
               </p>
               <div className="flex items-center gap-2">
                 <span className="text-sm text-green-800">Hasło tymczasowe:</span>
@@ -206,6 +234,14 @@ export default function AdminUzytkownicy({ loaderData, actionData }: Route.Compo
               {!created.emailSent && created.emailError && (
                 <p className="text-xs text-amber-600 font-mono break-all">{created.emailError}</p>
               )}
+              <button
+                type="button"
+                onClick={copyMessage}
+                className="inline-flex items-center gap-1.5 text-xs text-green-700 hover:text-green-900 border border-green-300 bg-green-100 hover:bg-green-200 rounded-lg px-3 py-1.5 transition-colors mt-1"
+              >
+                {copiedMsg ? <Check size={13} /> : <Copy size={13} />}
+                {copiedMsg ? 'Skopiowano!' : 'Kopiuj wiadomość powitalną'}
+              </button>
             </div>
             <button
               type="button"
@@ -240,6 +276,13 @@ export default function AdminUzytkownicy({ loaderData, actionData }: Route.Compo
 
       {/* Users table */}
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+        <div className="flex items-center gap-4 px-4 py-2 border-b border-gray-100 bg-gray-50 text-xs text-gray-400">
+          <span className="flex items-center gap-1"><Copy size={12} /> Kopiuj wiadomość</span>
+          <span className="flex items-center gap-1"><Pencil size={12} /> Edytuj</span>
+          <span className="flex items-center gap-1"><ToggleLeft size={14} /><ToggleRight size={14} /> Aktywuj / Dezaktywuj</span>
+          <span className="flex items-center gap-1"><KeyRound size={12} /> Resetuj hasło</span>
+          <span className="flex items-center gap-1"><Trash2 size={12} /> Usuń</span>
+        </div>
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
@@ -252,17 +295,26 @@ export default function AdminUzytkownicy({ loaderData, actionData }: Route.Compo
           </thead>
           <tbody className="divide-y divide-gray-100">
             {users.map(u => (
-              <UserRow key={u.id} u={u} currentUser={currentUser} allowedRoles={allowedRoles} pending={pending} />
+              <UserRow key={u.id} u={u} currentUser={currentUser} allowedRoles={allowedRoles} pending={pending} onRequestConfirm={setConfirm} />
             ))}
           </tbody>
         </table>
       </div>
+
+      {confirm && (
+        <ConfirmModal
+          message={confirm.message}
+          onConfirm={() => { confirm.onConfirm(); setConfirm(null); }}
+          onCancel={() => setConfirm(null)}
+        />
+      )}
     </div>
   );
 }
 
-function UserRow({ u, currentUser, allowedRoles, pending }: {
+function UserRow({ u, currentUser, allowedRoles, pending, onRequestConfirm }: {
   u: User; currentUser: User; allowedRoles: User['role'][]; pending: boolean;
+  onRequestConfirm: (state: { message: string; onConfirm: () => void }) => void;
 }) {
   const isSelf = u.id === currentUser.id;
   const [editing, setEditing] = useState(false);
@@ -270,6 +322,17 @@ function UserRow({ u, currentUser, allowedRoles, pending }: {
   const [editEmail, setEditEmail] = useState(u.email);
   const fetcher = useFetcher();
   const saving = fetcher.state === 'submitting';
+  const resetFormRef = useRef<HTMLFormElement>(null);
+  const deleteFormRef = useRef<HTMLFormElement>(null);
+  const [copiedRow, setCopiedRow] = useState(false);
+
+  function copyRowMessage() {
+    const msg = `Twoje konto do Systemu Rezerwacji Salek Lafrentz (salki.lafrentz.pl) zostało utworzone.\nDane do pierwszego logowania:\nAdres e-mail: ${u.email}\nHasło: [hasło]\n\nPo pierwszym zalogowaniu trzeba będzie ustawić nowe hasło. Jeśli zapomnisz swoje hasło, skontaktuj się z Administratorem.`;
+    navigator.clipboard.writeText(msg).then(() => {
+      setCopiedRow(true);
+      setTimeout(() => setCopiedRow(false), 2000);
+    });
+  }
 
   useEffect(() => {
     if (fetcher.state === 'idle' && fetcher.data && 'success' in fetcher.data) {
@@ -368,6 +431,14 @@ function UserRow({ u, currentUser, allowedRoles, pending }: {
               </>
             ) : (
               <>
+                <button
+                  type="button"
+                  onClick={copyRowMessage}
+                  title="Kopiuj wiadomość powitalną"
+                  className="text-gray-300 hover:text-blue-500 transition-colors"
+                >
+                  {copiedRow ? <Check size={16} /> : <Copy size={16} />}
+                </button>
                 {!isSelf && (
                   <button
                     type="button"
@@ -388,27 +459,37 @@ function UserRow({ u, currentUser, allowedRoles, pending }: {
                   </Form>
                 )}
                 {!isSelf && (
-                  <Form
-                    method="post"
-                    className="inline"
-                    onSubmit={e => { if (!window.confirm(`Zresetować hasło użytkownika ${u.name}? Nowe hasło zostanie pokazane w baneże.`)) e.preventDefault(); }}
-                  >
+                  <Form method="post" ref={resetFormRef} className="inline">
                     <input type="hidden" name="_action" value="reset_password" />
                     <input type="hidden" name="user_id" value={u.id} />
-                    <button type="submit" disabled={pending} title="Resetuj hasło" className="text-gray-300 hover:text-blue-500 transition-colors">
+                    <button
+                      type="button"
+                      disabled={pending}
+                      title="Resetuj hasło"
+                      className="text-gray-300 hover:text-blue-500 transition-colors"
+                      onClick={() => onRequestConfirm({
+                        message: `Zresetować hasło użytkownika ${u.name}? Nowe hasło zostanie pokazane w bannerze.`,
+                        onConfirm: () => resetFormRef.current?.requestSubmit(),
+                      })}
+                    >
                       <KeyRound size={16} />
                     </button>
                   </Form>
                 )}
                 {!isSelf && (
-                  <Form
-                    method="post"
-                    className="inline"
-                    onSubmit={e => { if (!window.confirm(`Usunąć użytkownika ${u.name}? Operacja jest nieodwracalna.`)) e.preventDefault(); }}
-                  >
+                  <Form method="post" ref={deleteFormRef} className="inline">
                     <input type="hidden" name="_action" value="delete_user" />
                     <input type="hidden" name="user_id" value={u.id} />
-                    <button type="submit" disabled={pending} title="Usuń użytkownika" className="text-gray-300 hover:text-red-500 transition-colors">
+                    <button
+                      type="button"
+                      disabled={pending}
+                      title="Usuń użytkownika"
+                      className="text-gray-300 hover:text-red-500 transition-colors"
+                      onClick={() => onRequestConfirm({
+                        message: `Usunąć użytkownika ${u.name}? Operacja jest nieodwracalna.`,
+                        onConfirm: () => deleteFormRef.current?.requestSubmit(),
+                      })}
+                    >
                       <Trash2 size={16} />
                     </button>
                   </Form>

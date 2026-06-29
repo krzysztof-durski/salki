@@ -1,4 +1,6 @@
 import { redirect, data, Form, Link, useNavigation } from "react-router";
+import { useState, useRef } from "react";
+import { ConfirmModal } from "~/components/ConfirmModal";
 import type { Route } from "./+types/rezerwacje.$id";
 import { getTokenFromRequest, getSessionUser, requireUser } from "~/lib/auth.server";
 import { queryOne, queryAll, execute } from "~/lib/db.server";
@@ -240,6 +242,8 @@ export default function BookingDetail({ loaderData, actionData }: Route.Componen
   const pending = nav.state === "submitting";
   const isOwner = booking.requester_id === user.id;
   const isAdminUser = isAdmin(user.role);
+  const [confirm, setConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
+  const deleteFormRef = useRef<HTMLFormElement>(null);
 
   return (
     <div className="w-full max-w-3xl mx-auto px-8 py-8 space-y-6">
@@ -301,15 +305,16 @@ export default function BookingDetail({ loaderData, actionData }: Route.Componen
           </Link>
         )}
         {(isOwner || isAdminUser) && (
-          <Form
-            method="post"
-            onSubmit={e => { if (!window.confirm("Usunąć tę rezerwację? Operacja jest nieodwracalna.")) e.preventDefault(); }}
-          >
+          <Form method="post" ref={deleteFormRef}>
             <input type="hidden" name="_action" value="delete" />
             <button
-              type="submit"
+              type="button"
               disabled={pending}
               className="flex items-center gap-1.5 text-sm text-red-500 hover:text-red-700 transition-colors"
+              onClick={() => setConfirm({
+                message: "Usunąć tę rezerwację? Operacja jest nieodwracalna.",
+                onConfirm: () => deleteFormRef.current?.requestSubmit(),
+              })}
             >
               <Trash2 size={14} /> Usuń rezerwację
             </button>
@@ -357,6 +362,14 @@ export default function BookingDetail({ loaderData, actionData }: Route.Componen
         <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
           {actionData.error}
         </p>
+      )}
+
+      {confirm && (
+        <ConfirmModal
+          message={confirm.message}
+          onConfirm={() => { confirm.onConfirm(); setConfirm(null); }}
+          onCancel={() => setConfirm(null)}
+        />
       )}
     </div>
   );
