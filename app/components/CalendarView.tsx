@@ -395,11 +395,11 @@ function BookingSlot({
 
 function getSlotColor(status: Booking['status'], isOwn: boolean): string {
   if (status === 'approved') {
-    return isOwn ? 'bg-sky-200 text-sky-900' : 'bg-gray-200 text-gray-600';
+    return isOwn ? 'bg-sky-200 text-sky-900 border border-sky-400' : 'bg-gray-200 text-gray-600 border border-gray-400';
   }
-  if (status === 'pending') return 'bg-amber-200 text-amber-900';
-  if (status === 'counter_proposed') return 'bg-orange-200 text-orange-900';
-  return 'bg-gray-200 text-gray-600';
+  if (status === 'pending') return 'bg-amber-200 text-amber-900 border border-amber-400';
+  if (status === 'counter_proposed') return 'bg-orange-200 text-orange-900 border border-orange-400';
+  return 'bg-gray-200 text-gray-600 border border-gray-400';
 }
 
 function getSlotLabel(status: Booking['status'], isOwn: boolean): string {
