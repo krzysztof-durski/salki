@@ -102,15 +102,19 @@ export default function AppShell({ loaderData }: Route.ComponentProps) {
     return () => clearInterval(id);
   }, []);
 
-  // Reset notif count when user navigates somewhere that marks them read
+  // Re-fetch notif count after navigating to a page that marks notifications read
   useEffect(() => {
-    const clearsNotifs =
+    const shouldRefetch =
       location.pathname === '/powiadomienia' ||
       /^\/rezerwacje\/\d+$/.test(location.pathname);
-    if (clearsNotifs) {
-      setLiveNotifCount(0);
-      knownNotifRef.current = 0;
-    }
+    if (!shouldRefetch) return;
+    fetch('/api/notifications')
+      .then(r => r.json() as Promise<{ count: number }>)
+      .then(({ count }) => {
+        setLiveNotifCount(count);
+        knownNotifRef.current = count;
+      })
+      .catch(() => {});
   }, [location.pathname]);
 
   useEffect(() => {
@@ -172,9 +176,7 @@ export default function AppShell({ loaderData }: Route.ComponentProps) {
 
         <div className="border-t border-gray-200 px-3 py-4">
           {user.role === "admin" && (
-            <Form method="post" action="/logout" className="w-full mb-2">
-              <OnDutyToggle onDuty={!!user.on_duty} />
-            </Form>
+            <OnDutyToggle onDuty={!!user.on_duty} />
           )}
           <div className="flex items-center gap-3 px-3 py-2 mb-1">
             <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-sm font-semibold select-none shrink-0">

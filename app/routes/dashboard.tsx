@@ -35,9 +35,14 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   let bookings: Booking[] = [];
   if (roomIds.length > 0) {
     const placeholders = roomIds.map(() => '?').join(',');
-    const statusFilter = isAdmin(user.role)
-      ? `status IN ('pending','approved','counter_proposed')`
-      : `(status = 'approved' OR (requester_id = ${user.id} AND status IN ('pending','counter_proposed')))`;
+    let statusFilter: string;
+    const statusParams: number[] = [];
+    if (isAdmin(user.role)) {
+      statusFilter = `status IN ('pending','approved','counter_proposed')`;
+    } else {
+      statusFilter = `(status = 'approved' OR (requester_id = ? AND status IN ('pending','counter_proposed')))`;
+      statusParams.push(user.id);
+    }
 
     bookings = await queryAll<Booking>(
       env.DB,
@@ -49,7 +54,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
          AND b.date BETWEEN ? AND ?
          AND ${statusFilter}
        ORDER BY b.date, b.start_time`,
-      [...roomIds, dateFrom, dateTo]
+      [...roomIds, dateFrom, dateTo, ...statusParams]
     );
   }
 

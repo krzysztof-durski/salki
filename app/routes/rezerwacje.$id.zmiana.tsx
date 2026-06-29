@@ -54,6 +54,22 @@ export async function action({ params, request, context }: Route.ActionArgs) {
     if (!cr) return data({ error: "Nie znaleziono wniosku o zmianę." }, { status: 404 });
 
     if (_action === "approve_cr") {
+      if (cr.new_date || cr.new_start_time || cr.new_end_time) {
+        const newDate = cr.new_date ?? booking.date;
+        const newStart = cr.new_start_time ?? booking.start_time;
+        const newEnd = cr.new_end_time ?? booking.end_time;
+        const conflict = await queryOne<{ n: number }>(
+          env.DB,
+          `SELECT COUNT(*) as n FROM bookings
+           WHERE room_id = ? AND date = ? AND status = 'approved' AND id != ?
+             AND start_time < ? AND end_time > ?`,
+          [booking.room_id, newDate, bookingId, newEnd, newStart]
+        );
+        if ((conflict?.n ?? 0) > 0) {
+          return data({ error: "Proponowany termin jest już zajęty — nie można zatwierdzić zmiany." }, { status: 409 });
+        }
+      }
+
       // Only update non-null fields
       const updates: string[] = [];
       const vals: unknown[] = [];

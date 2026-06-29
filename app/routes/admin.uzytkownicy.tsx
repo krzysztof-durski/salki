@@ -66,6 +66,9 @@ export async function action({ request, context }: Route.ActionArgs) {
     const role = form.get("role") as User['role'];
     const allowed = assignableRoles(actor.role);
     if (!allowed.includes(role)) return data({ error: "Brak uprawnień do przypisania tej roli." }, { status: 403 });
+    const editTarget = await queryOne<{ role: string }>(env.DB, "SELECT role FROM users WHERE id=?", [userId]);
+    if (editTarget?.role === 'super_admin' && actor.role !== 'super_admin')
+      return data({ error: "Brak uprawnień do modyfikacji konta Super Admin." }, { status: 403 });
     await execute(env.DB, "UPDATE users SET name=?, role=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", [name, role, userId]);
     await logAction(env.DB, { userId: actor.id, action: 'user.edited', entityType: 'user', entityId: userId });
   }
@@ -75,6 +78,9 @@ export async function action({ request, context }: Route.ActionArgs) {
     const name = (form.get("name") as string)?.trim();
     const email = (form.get("email") as string)?.trim().toLowerCase();
     if (!name || !email) return data({ error: "Imię i adres e-mail są wymagane." }, { status: 400 });
+    const profileTarget = await queryOne<{ role: string }>(env.DB, "SELECT role FROM users WHERE id=?", [userId]);
+    if (profileTarget?.role === 'super_admin' && actor.role !== 'super_admin')
+      return data({ error: "Brak uprawnień do modyfikacji konta Super Admin." }, { status: 403 });
     try {
       await execute(env.DB, "UPDATE users SET name=?, email=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", [name, email, userId]);
     } catch {
@@ -87,6 +93,9 @@ export async function action({ request, context }: Route.ActionArgs) {
   else if (_action === "toggle_active") {
     const userId = parseInt(form.get("user_id") as string, 10);
     if (userId === actor.id) return data({ error: "Nie możesz dezaktywować własnego konta." }, { status: 400 });
+    const toggleTarget = await queryOne<{ role: string }>(env.DB, "SELECT role FROM users WHERE id=?", [userId]);
+    if (toggleTarget?.role === 'super_admin' && actor.role !== 'super_admin')
+      return data({ error: "Brak uprawnień do modyfikacji konta Super Admin." }, { status: 403 });
     await execute(
       env.DB,
       "UPDATE users SET is_active=CASE WHEN is_active=1 THEN 0 ELSE 1 END, updated_at=CURRENT_TIMESTAMP WHERE id=?",
@@ -100,6 +109,8 @@ export async function action({ request, context }: Route.ActionArgs) {
     if (userId === actor.id) return data({ error: "Nie możesz resetować własnego hasła tą metodą." }, { status: 400 });
     const target = await queryOne<User>(env.DB, "SELECT * FROM users WHERE id=?", [userId]);
     if (!target) return data({ error: "Nie znaleziono użytkownika." }, { status: 404 });
+    if (target.role === 'super_admin' && actor.role !== 'super_admin')
+      return data({ error: "Brak uprawnień do modyfikacji konta Super Admin." }, { status: 403 });
     const tempPass = generateToken(6);
     const hash = await hashPassword(tempPass);
     await execute(env.DB, "UPDATE users SET password_hash=?, must_change_password=1, updated_at=CURRENT_TIMESTAMP WHERE id=?", [hash, userId]);
@@ -113,6 +124,9 @@ export async function action({ request, context }: Route.ActionArgs) {
   else if (_action === "delete_user") {
     const userId = parseInt(form.get("user_id") as string, 10);
     if (userId === actor.id) return data({ error: "Nie możesz usunąć własnego konta." }, { status: 400 });
+    const deleteTarget = await queryOne<{ role: string }>(env.DB, "SELECT role FROM users WHERE id=?", [userId]);
+    if (deleteTarget?.role === 'super_admin' && actor.role !== 'super_admin')
+      return data({ error: "Brak uprawnień do usunięcia konta Super Admin." }, { status: 403 });
 
     // Log before deletion while the row still exists
     await logAction(env.DB, { userId: actor.id, action: 'user.deleted', entityType: 'user', entityId: userId });
