@@ -11,7 +11,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const { env } = context.cloudflare;
   const token = getTokenFromRequest(request);
   const user = requireUser(await getSessionUser(env.DB, token));
-  if (!canManageRooms(user.role)) throw new Response(null, { status: 403 });
+  if (!canManageRooms(user)) throw new Response(null, { status: 403 });
 
   const rooms = await queryAll<Room>(
     env.DB,
@@ -24,7 +24,7 @@ export async function action({ request, context }: Route.ActionArgs) {
   const { env } = context.cloudflare;
   const token = getTokenFromRequest(request);
   const user = requireUser(await getSessionUser(env.DB, token));
-  if (!canManageRooms(user.role)) throw new Response(null, { status: 403 });
+  if (!canManageRooms(user)) throw new Response(null, { status: 403 });
 
   const form = await request.formData();
   const _action = form.get("_action") as string;

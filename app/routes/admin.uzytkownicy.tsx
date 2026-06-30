@@ -1,14 +1,23 @@
 import { redirect, data, Form, useNavigation, useFetcher } from "react-router";
 import { useState, useEffect, useRef } from "react";
 import type { Route } from "./+types/admin.uzytkownicy";
-import { getTokenFromRequest, getSessionUser, requireUser, hashPassword, generateToken } from "~/lib/auth.server";
+import { getTokenFromRequest, getSessionUser, requireUser, hashPassword } from "~/lib/auth.server";
 import { queryAll, queryOne, execute } from "~/lib/db.server";
 import { logAction } from "~/lib/audit.server";
-import { sendEmail, tplAccountCreated } from "~/lib/email.server";
 import { canManageUsers, assignableRoles, ROLE_LABELS } from "~/types";
 import type { User } from "~/types";
-import { Plus, ToggleLeft, ToggleRight, Trash2, Copy, Check, X, KeyRound, Pencil } from "lucide-react";
+import { Plus, ToggleLeft, ToggleRight, Trash2, Copy, Check, X, KeyRound, Pencil, Shield } from "lucide-react";
 import { ConfirmModal } from "~/components/ConfirmModal";
+
+function tempPasswordFromName(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  const first = parts[0] ?? '';
+  const last = parts.length > 1 ? parts[parts.length - 1] : parts[0];
+  const prefix = first.slice(0, 3);
+  const formatted = prefix.charAt(0).toUpperCase() + prefix.slice(1).toLowerCase();
+  const suffix = last.slice(-3).toLowerCase();
+  return `${formatted}${suffix}098^`;
+}
 
 export async function loader({ request, context }: Route.LoaderArgs) {
   const { env } = context.cloudflare;
@@ -18,7 +27,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 
   const users = await queryAll<User>(
     env.DB,
-    "SELECT id, email, name, role, is_active, on_duty, created_at FROM users ORDER BY name ASC"
+    "SELECT id, email, name, role, is_active, on_duty, created_at, admin_can_assign_admin, admin_can_assign_zarzad, admin_can_assign_pracownik, admin_can_manage_rooms FROM users ORDER BY name ASC"
   );
   return { currentUser: user, users };
 }
@@ -38,34 +47,36 @@ export async function action({ request, context }: Route.ActionArgs) {
     const role = form.get("role") as User['role'];
 
     if (!email || !name || !role) return data({ error: "Wypełnij wszystkie pola." }, { status: 400 });
-    const allowed = assignableRoles(actor.role);
+    const allowed = assignableRoles(actor);
     if (!allowed.includes(role)) return data({ error: "Brak uprawnień do przypisania tej roli." }, { status: 403 });
 
-    const tempPass = generateToken(6); // 12-char hex
+    const tempPass = tempPasswordFromName(name);
     const hash = await hashPassword(tempPass);
+
+    const canAssignAdmin    = actor.role === 'super_admin' && role === 'admin' ? (form.get("admin_can_assign_admin")    === "1" ? 1 : 0) : 1;
+    const canAssignZarzad   = actor.role === 'super_admin' && role === 'admin' ? (form.get("admin_can_assign_zarzad")   === "1" ? 1 : 0) : 0;
+    const canAssignPracownik= actor.role === 'super_admin' && role === 'admin' ? (form.get("admin_can_assign_pracownik")=== "1" ? 1 : 0) : 1;
+    const canManageRoomsVal = actor.role === 'super_admin' && role === 'admin' ? (form.get("admin_can_manage_rooms")    === "1" ? 1 : 0) : 0;
 
     try {
       await execute(
         env.DB,
-        "INSERT INTO users (email, name, password_hash, role) VALUES (?, ?, ?, ?)",
-        [email, name, hash, role]
+        "INSERT INTO users (email, name, password_hash, role, admin_can_assign_admin, admin_can_assign_zarzad, admin_can_assign_pracownik, admin_can_manage_rooms) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        [email, name, hash, role, canAssignAdmin, canAssignZarzad, canAssignPracownik, canManageRoomsVal]
       );
     } catch {
       return data({ error: "Adres e-mail jest już zajęty." }, { status: 409 });
     }
 
-    const appUrl = new URL(request.url).origin;
-    const tpl = tplAccountCreated({ name, tempPassword: tempPass, appUrl });
-    const { sent: emailSent, error: emailError } = await sendEmail(env, { to: email, ...tpl });
     await logAction(env.DB, { userId: actor.id, action: 'user.created', entityType: 'user', details: { email, role } });
-    return data({ created: { name, email, tempPassword: tempPass, emailSent, emailError, reason: 'created' as const } });
+    return data({ created: { name, email, tempPassword: tempPass, reason: 'created' as const } });
   }
 
   else if (_action === "edit") {
     const userId = parseInt(form.get("user_id") as string, 10);
     const name = (form.get("name") as string)?.trim();
     const role = form.get("role") as User['role'];
-    const allowed = assignableRoles(actor.role);
+    const allowed = assignableRoles(actor);
     if (!allowed.includes(role)) return data({ error: "Brak uprawnień do przypisania tej roli." }, { status: 403 });
     const editTarget = await queryOne<{ role: string }>(env.DB, "SELECT role FROM users WHERE id=?", [userId]);
     if (editTarget?.role === 'super_admin' && actor.role !== 'super_admin')
@@ -112,14 +123,11 @@ export async function action({ request, context }: Route.ActionArgs) {
     if (!target) return data({ error: "Nie znaleziono użytkownika." }, { status: 404 });
     if (target.role === 'super_admin' && actor.role !== 'super_admin')
       return data({ error: "Brak uprawnień do modyfikacji konta Super Admin." }, { status: 403 });
-    const tempPass = generateToken(6);
+    const tempPass = tempPasswordFromName(target.name);
     const hash = await hashPassword(tempPass);
     await execute(env.DB, "UPDATE users SET password_hash=?, must_change_password=1, updated_at=CURRENT_TIMESTAMP WHERE id=?", [hash, userId]);
-    const appUrl = new URL(request.url).origin;
-    const tpl = tplAccountCreated({ name: target.name, tempPassword: tempPass, appUrl });
-    const { sent: emailSent, error: emailError } = await sendEmail(env, { to: target.email, ...tpl });
     await logAction(env.DB, { userId: actor.id, action: 'user.password_reset', entityType: 'user', entityId: userId });
-    return data({ created: { name: target.name, email: target.email, tempPassword: tempPass, emailSent, emailError, reason: 'reset' as const } });
+    return data({ created: { name: target.name, email: target.email, tempPassword: tempPass, reason: 'reset' as const } });
   }
 
   else if (_action === "delete_user") {
@@ -146,6 +154,26 @@ export async function action({ request, context }: Route.ActionArgs) {
     await execute(env.DB, "DELETE FROM users WHERE id = ?", [userId]);
   }
 
+  else if (_action === "set_admin_permissions") {
+    if (actor.role !== 'super_admin')
+      return data({ error: "Brak uprawnień." }, { status: 403 });
+    const userId = parseInt(form.get("user_id") as string, 10);
+    const permTarget = await queryOne<{ role: string }>(env.DB, "SELECT role FROM users WHERE id=?", [userId]);
+    if (permTarget?.role !== 'admin')
+      return data({ error: "Uprawnienia można konfigurować tylko dla administratorów." }, { status: 400 });
+    const canAssignAdmin    = form.get("admin_can_assign_admin")    === "1" ? 1 : 0;
+    const canAssignZarzad   = form.get("admin_can_assign_zarzad")   === "1" ? 1 : 0;
+    const canAssignPracownik= form.get("admin_can_assign_pracownik")=== "1" ? 1 : 0;
+    const canManageRoomsVal = form.get("admin_can_manage_rooms")    === "1" ? 1 : 0;
+    await execute(
+      env.DB,
+      "UPDATE users SET admin_can_assign_admin=?, admin_can_assign_zarzad=?, admin_can_assign_pracownik=?, admin_can_manage_rooms=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+      [canAssignAdmin, canAssignZarzad, canAssignPracownik, canManageRoomsVal, userId]
+    );
+    await logAction(env.DB, { userId: actor.id, action: 'user.edited', entityType: 'user', entityId: userId, details: { admin_permissions: { canAssignAdmin, canAssignZarzad, canAssignPracownik, canManageRoomsVal } } });
+    return data({ success: true });
+  }
+
   return redirect("/admin/uzytkownicy");
 }
 
@@ -153,25 +181,54 @@ export default function AdminUzytkownicy({ loaderData, actionData }: Route.Compo
   const { currentUser, users } = loaderData;
   const nav = useNavigation();
   const pending = nav.state === "submitting";
-  const allowedRoles = assignableRoles(currentUser.role);
+  const allowedRoles = assignableRoles(currentUser);
   const [copied, setCopied] = useState(false);
   const [copiedMsg, setCopiedMsg] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [confirm, setConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const autoCopyRef = useRef(false);
+  const [newEmail, setNewEmail] = useState('');
+  const [newName, setNewName] = useState('');
+  const [newRole, setNewRole] = useState('pracownik');
+  const [newPermAssignAdmin, setNewPermAssignAdmin] = useState(true);
+  const [newPermAssignZarzad, setNewPermAssignZarzad] = useState(false);
+  const [newPermAssignPracownik, setNewPermAssignPracownik] = useState(true);
+  const [newPermManageRooms, setNewPermManageRooms] = useState(false);
+
+  function handleNewEmailChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const val = e.target.value;
+    setNewEmail(val);
+    const match = val.match(/^(.+)@lafrentz\.pl$/i);
+    if (match) {
+      const parsed = match[1]
+        .split('.')
+        .map(s => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase())
+        .join(' ');
+      setNewName(parsed);
+    }
+  }
 
   const created = actionData && 'created' in actionData ? actionData.created : null;
   const showBanner = !!created && !bannerDismissed;
 
   function buildMessage(c: NonNullable<typeof created>) {
     if (c.reason === 'reset') {
-      return `Twoje hasło do Systemu Rezerwacji Salek Lafrentz (salki.lafrentz.pl) zostało zresetowane.\nDane do logowania:\nAdres e-mail: ${c.email}\nNowe hasło tymczasowe: ${c.tempPassword}\n\nPo zalogowaniu trzeba będzie ustawić nowe hasło. Jeśli masz problem z logowaniem, skontaktuj się z Administratorem.`;
+      return `Twoje hasło do Systemu Rezerwacji Salek Lafrentz (salki.lafrentz.pl) zostało zresetowane.\nDane do logowania:\nAdres e-mail: ${c.email}\nNowe hasło tymczasowe: ${c.tempPassword}\n\nPo zalogowaniu trzeba będzie ustawić nowe hasło. Jeśli masz problem z logowaniem, skontaktuj się z recepcją.`;
     }
-    return `Twoje konto do Systemu Rezerwacji Salek Lafrentz (salki.lafrentz.pl) zostało utworzone.\nDane do pierwszego logowania:\nAdres e-mail: ${c.email}\nHasło: ${c.tempPassword}\n\nPo pierwszym zalogowaniu trzeba będzie ustawić nowe hasło. Jeśli zapomnisz swoje hasło, skontaktuj się z Administratorem.`;
+    return `Twoje konto do Systemu Rezerwacji Salek Lafrentz (salki.lafrentz.pl) zostało utworzone.\nDane do pierwszego logowania:\nAdres e-mail: ${c.email}\nHasło: ${c.tempPassword}\n\nPo pierwszym zalogowaniu trzeba będzie ustawić nowe hasło. Jeśli zapomnisz swoje hasło, skontaktuj się z recepcją.`;
   }
 
   useEffect(() => {
-    if (created) setBannerDismissed(false);
+    if (created) {
+      setBannerDismissed(false);
+      setNewEmail('');
+      setNewName('');
+      setNewRole('pracownik');
+      setNewPermAssignAdmin(true);
+      setNewPermAssignZarzad(false);
+      setNewPermAssignPracownik(true);
+      setNewPermManageRooms(false);
+    }
   }, [created?.email]);
 
   useEffect(() => {
@@ -226,21 +283,13 @@ export default function AdminUzytkownicy({ loaderData, actionData }: Route.Compo
                   {copied ? <Check size={15} /> : <Copy size={15} />}
                 </button>
               </div>
-              <p className={`text-xs ${created.emailSent ? 'text-green-700' : 'text-amber-700 font-medium'}`}>
-                {created.emailSent
-                  ? '✓ Email z hasłem został wysłany do użytkownika.'
-                  : '⚠ Nie udało się wysłać e-maila — przekaż hasło ręcznie.'}
-              </p>
-              {!created.emailSent && created.emailError && (
-                <p className="text-xs text-amber-600 font-mono break-all">{created.emailError}</p>
-              )}
               <button
                 type="button"
                 onClick={copyMessage}
                 className="inline-flex items-center gap-1.5 text-xs text-green-700 hover:text-green-900 border border-green-300 bg-green-100 hover:bg-green-200 rounded-lg px-3 py-1.5 transition-colors mt-1"
               >
                 {copiedMsg ? <Check size={13} /> : <Copy size={13} />}
-                {copiedMsg ? 'Skopiowano!' : 'Kopiuj wiadomość powitalną'}
+                {copiedMsg ? 'Skopiowano!' : 'Kopiuj wiadomość z tymczasowymi danymi logowania'}
               </button>
             </div>
             <button
@@ -257,17 +306,61 @@ export default function AdminUzytkownicy({ loaderData, actionData }: Route.Compo
       {/* Add user form */}
       <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm space-y-4">
         <h2 className="font-semibold text-gray-900 flex items-center gap-2"><Plus size={18} /> Dodaj użytkownika</h2>
-        <Form method="post" className="grid grid-cols-1 sm:grid-cols-4 gap-3" onSubmit={() => setBannerDismissed(true)}>
+        <Form method="post" className="space-y-3" onSubmit={() => setBannerDismissed(true)}>
           <input type="hidden" name="_action" value="create" />
-          <input name="name" type="text" placeholder="Imię i nazwisko" required className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
-          <input name="email" type="email" placeholder="Adres e-mail" required className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
-          <select name="role" required className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
-            <option value="">— rola —</option>
-            {allowedRoles.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
-          </select>
-          <button type="submit" disabled={pending} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg">
-            Dodaj
-          </button>
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+            <input
+              name="email" type="email" placeholder="Adres e-mail" required
+              value={newEmail} onChange={handleNewEmailChange}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            />
+            <input
+              name="name" type="text" placeholder="Imię i nazwisko" required
+              value={newName} onChange={e => setNewName(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            />
+            <select
+              name="role" required
+              value={newRole} onChange={e => setNewRole(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            >
+              {allowedRoles.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+            </select>
+            <button type="submit" disabled={pending} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg">
+              Dodaj
+            </button>
+          </div>
+          {currentUser.role === 'super_admin' && newRole === 'admin' && (
+            <div className="border border-blue-100 bg-blue-50 rounded-lg px-4 py-3 space-y-2">
+              <span className="text-xs font-medium text-blue-700 flex items-center gap-1.5"><Shield size={13} /> Uprawnienia administratora</span>
+              <div className="flex flex-wrap gap-x-6 gap-y-1.5">
+                <label className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer">
+                  <input type="checkbox" name="admin_can_assign_admin" value="1"
+                    checked={newPermAssignAdmin} onChange={e => setNewPermAssignAdmin(e.target.checked)}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                  Może tworzyć administratorów
+                </label>
+                <label className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer">
+                  <input type="checkbox" name="admin_can_assign_zarzad" value="1"
+                    checked={newPermAssignZarzad} onChange={e => setNewPermAssignZarzad(e.target.checked)}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                  Może tworzyć Zarząd
+                </label>
+                <label className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer">
+                  <input type="checkbox" name="admin_can_assign_pracownik" value="1"
+                    checked={newPermAssignPracownik} onChange={e => setNewPermAssignPracownik(e.target.checked)}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                  Może tworzyć Biuro
+                </label>
+                <label className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer">
+                  <input type="checkbox" name="admin_can_manage_rooms" value="1"
+                    checked={newPermManageRooms} onChange={e => setNewPermManageRooms(e.target.checked)}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                  Może zarządzać salami
+                </label>
+              </div>
+            </div>
+          )}
         </Form>
         {actionData && 'error' in actionData && actionData.error && (
           <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{actionData.error}</p>
@@ -277,10 +370,11 @@ export default function AdminUzytkownicy({ loaderData, actionData }: Route.Compo
       {/* Users table */}
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
         <div className="flex items-center gap-4 px-4 py-2 border-b border-gray-100 bg-gray-50 text-xs text-gray-400">
-          <span className="flex items-center gap-1"><Copy size={12} /> Kopiuj wiadomość</span>
           <span className="flex items-center gap-1"><Pencil size={12} /> Edytuj</span>
-          <span className="flex items-center gap-1"><ToggleLeft size={14} /><ToggleRight size={14} /> Aktywuj / Dezaktywuj</span>
+          <span className="flex items-center gap-1"><Shield size={12} /> Uprawnienia</span>
+          <span className="flex items-center gap-1"><Copy size={12} /> Kopiuj wiadomość z tymczasowymi danymi logowania</span>
           <span className="flex items-center gap-1"><KeyRound size={12} /> Resetuj hasło</span>
+          <span className="flex items-center gap-1"><ToggleLeft size={14} /><ToggleRight size={14} /> Aktywuj / Dezaktywuj</span>
           <span className="flex items-center gap-1"><Trash2 size={12} /> Usuń</span>
         </div>
         <table className="w-full text-sm">
@@ -320,14 +414,21 @@ function UserRow({ u, currentUser, allowedRoles, pending, onRequestConfirm }: {
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(u.name);
   const [editEmail, setEditEmail] = useState(u.email);
+  const [permEditing, setPermEditing] = useState(false);
+  const [permAssignAdmin, setPermAssignAdmin] = useState(!!u.admin_can_assign_admin);
+  const [permAssignZarzad, setPermAssignZarzad] = useState(!!u.admin_can_assign_zarzad);
+  const [permAssignPracownik, setPermAssignPracownik] = useState(!!u.admin_can_assign_pracownik);
+  const [permManageRooms, setPermManageRooms] = useState(!!u.admin_can_manage_rooms);
   const fetcher = useFetcher();
+  const permFetcher = useFetcher();
   const saving = fetcher.state === 'submitting';
+  const savingPerms = permFetcher.state === 'submitting';
   const resetFormRef = useRef<HTMLFormElement>(null);
   const deleteFormRef = useRef<HTMLFormElement>(null);
   const [copiedRow, setCopiedRow] = useState(false);
 
   function copyRowMessage() {
-    const msg = `Twoje konto do Systemu Rezerwacji Salek Lafrentz (salki.lafrentz.pl) zostało utworzone.\nDane do pierwszego logowania:\nAdres e-mail: ${u.email}\nHasło: [hasło]\n\nPo pierwszym zalogowaniu trzeba będzie ustawić nowe hasło. Jeśli zapomnisz swoje hasło, skontaktuj się z Administratorem.`;
+    const msg = `Twoje konto do Systemu Rezerwacji Salek Lafrentz (salki.lafrentz.pl) zostało utworzone.\nDane do pierwszego logowania:\nAdres e-mail: ${u.email}\nHasło: ${tempPasswordFromName(u.name)}\n\nPo pierwszym zalogowaniu trzeba będzie ustawić nowe hasło. Jeśli zapomnisz swoje hasło, skontaktuj się z recepcją.`;
     navigator.clipboard.writeText(msg).then(() => {
       setCopiedRow(true);
       setTimeout(() => setCopiedRow(false), 2000);
@@ -341,11 +442,24 @@ function UserRow({ u, currentUser, allowedRoles, pending, onRequestConfirm }: {
   }, [fetcher.state, fetcher.data]);
 
   useEffect(() => {
+    if (permFetcher.state === 'idle' && permFetcher.data && 'success' in permFetcher.data) {
+      setPermEditing(false);
+    }
+  }, [permFetcher.state, permFetcher.data]);
+
+  useEffect(() => {
     if (!editing) {
       setEditName(u.name);
       setEditEmail(u.email);
     }
   }, [u.name, u.email, editing]);
+
+  useEffect(() => {
+    setPermAssignAdmin(!!u.admin_can_assign_admin);
+    setPermAssignZarzad(!!u.admin_can_assign_zarzad);
+    setPermAssignPracownik(!!u.admin_can_assign_pracownik);
+    setPermManageRooms(!!u.admin_can_manage_rooms);
+  }, [u.admin_can_assign_admin, u.admin_can_assign_zarzad, u.admin_can_assign_pracownik, u.admin_can_manage_rooms]);
 
   function handleSave() {
     const fd = new FormData();
@@ -381,26 +495,30 @@ function UserRow({ u, currentUser, allowedRoles, pending, onRequestConfirm }: {
           ) : u.email}
         </td>
         <td className="px-4 py-3">
-          <Form method="post" className="inline-flex items-center gap-2">
-            <input type="hidden" name="_action" value="edit" />
-            <input type="hidden" name="user_id" value={u.id} />
-            <input type="hidden" name="name" value={u.name} />
-            <select
-              name="role"
-              defaultValue={u.role}
-              onChange={e => (e.currentTarget.form as HTMLFormElement).submit()}
-              className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-transparent focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            >
-              {allowedRoles.includes(u.role) || currentUser.role === 'super_admin'
-                ? [...new Set([...allowedRoles, u.role])].map(r => (
-                    <option key={r} value={r} disabled={!allowedRoles.includes(r)}>
-                      {ROLE_LABELS[r]}
-                    </option>
-                  ))
-                : <option value={u.role}>{ROLE_LABELS[u.role]}</option>
-              }
-            </select>
-          </Form>
+          {u.role === 'super_admin' && currentUser.role !== 'super_admin' ? (
+            <span className="text-xs px-2 py-1 text-gray-500">{ROLE_LABELS[u.role]}</span>
+          ) : (
+            <Form method="post" className="inline-flex items-center gap-2">
+              <input type="hidden" name="_action" value="edit" />
+              <input type="hidden" name="user_id" value={u.id} />
+              <input type="hidden" name="name" value={u.name} />
+              <select
+                name="role"
+                defaultValue={u.role}
+                onChange={e => (e.currentTarget.form as HTMLFormElement).submit()}
+                className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-transparent focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              >
+                {allowedRoles.includes(u.role) || currentUser.role === 'super_admin'
+                  ? [...new Set([...allowedRoles, u.role])].map(r => (
+                      <option key={r} value={r} disabled={!allowedRoles.includes(r)}>
+                        {ROLE_LABELS[r]}
+                      </option>
+                    ))
+                  : <option value={u.role}>{ROLE_LABELS[u.role]}</option>
+                }
+              </select>
+            </Form>
+          )}
         </td>
         <td className="px-4 py-3">
           <span className={`text-xs px-2 py-0.5 rounded-full ${u.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'}`}>
@@ -431,15 +549,7 @@ function UserRow({ u, currentUser, allowedRoles, pending, onRequestConfirm }: {
               </>
             ) : (
               <>
-                <button
-                  type="button"
-                  onClick={copyRowMessage}
-                  title="Kopiuj wiadomość powitalną"
-                  className="text-gray-300 hover:text-blue-500 transition-colors"
-                >
-                  {copiedRow ? <Check size={16} /> : <Copy size={16} />}
-                </button>
-                {!isSelf && (
+                {!isSelf && (u.role !== 'super_admin' || currentUser.role === 'super_admin') && (
                   <button
                     type="button"
                     onClick={() => setEditing(true)}
@@ -449,17 +559,26 @@ function UserRow({ u, currentUser, allowedRoles, pending, onRequestConfirm }: {
                     <Pencil size={16} />
                   </button>
                 )}
-                {!isSelf && (
-                  <Form method="post" className="inline">
-                    <input type="hidden" name="_action" value="toggle_active" />
-                    <input type="hidden" name="user_id" value={u.id} />
-                    <button type="submit" disabled={pending} title={u.is_active ? "Dezaktywuj" : "Aktywuj"} className="text-gray-400 hover:text-gray-700 transition-colors">
-                      {u.is_active ? <ToggleRight size={18} className="text-green-500" /> : <ToggleLeft size={18} />}
-                    </button>
-                  </Form>
+                {currentUser.role === 'super_admin' && u.role === 'admin' && !isSelf && (
+                  <button
+                    type="button"
+                    onClick={() => setPermEditing(v => !v)}
+                    title="Uprawnienia administratora"
+                    className={`transition-colors ${permEditing ? 'text-blue-600' : 'text-gray-300 hover:text-blue-500'}`}
+                  >
+                    <Shield size={16} />
+                  </button>
                 )}
-                {!isSelf && (
-                  <Form method="post" ref={resetFormRef} className="inline">
+                <button
+                  type="button"
+                  onClick={copyRowMessage}
+                  title="Kopiuj wiadomość z tymczasowymi danymi logowania"
+                  className="text-gray-300 hover:text-blue-500 transition-colors"
+                >
+                  {copiedRow ? <Check size={16} /> : <Copy size={16} />}
+                </button>
+                {!isSelf && (u.role !== 'super_admin' || currentUser.role === 'super_admin') && (
+                  <Form method="post" ref={resetFormRef} className="inline-flex items-center">
                     <input type="hidden" name="_action" value="reset_password" />
                     <input type="hidden" name="user_id" value={u.id} />
                     <button
@@ -476,8 +595,17 @@ function UserRow({ u, currentUser, allowedRoles, pending, onRequestConfirm }: {
                     </button>
                   </Form>
                 )}
-                {!isSelf && (
-                  <Form method="post" ref={deleteFormRef} className="inline">
+                {!isSelf && (u.role !== 'super_admin' || currentUser.role === 'super_admin') && (
+                  <Form method="post" className="inline-flex items-center">
+                    <input type="hidden" name="_action" value="toggle_active" />
+                    <input type="hidden" name="user_id" value={u.id} />
+                    <button type="submit" disabled={pending} title={u.is_active ? "Dezaktywuj" : "Aktywuj"} className="text-gray-400 hover:text-gray-700 transition-colors">
+                      {u.is_active ? <ToggleRight size={16} className="text-green-500" /> : <ToggleLeft size={16} />}
+                    </button>
+                  </Form>
+                )}
+                {!isSelf && (u.role !== 'super_admin' || currentUser.role === 'super_admin') && (
+                  <Form method="post" ref={deleteFormRef} className="inline-flex items-center">
                     <input type="hidden" name="_action" value="delete_user" />
                     <input type="hidden" name="user_id" value={u.id} />
                     <button
@@ -503,6 +631,52 @@ function UserRow({ u, currentUser, allowedRoles, pending, onRequestConfirm }: {
         <tr>
           <td colSpan={5} className="px-4 pb-2">
             <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-3 py-1">{fetcherError}</p>
+          </td>
+        </tr>
+      )}
+      {permEditing && currentUser.role === 'super_admin' && u.role === 'admin' && (
+        <tr>
+          <td colSpan={5} className="px-4 pt-2 pb-3">
+            <permFetcher.Form method="post" className="border border-blue-100 bg-blue-50 rounded-lg px-4 py-3 space-y-2">
+              <input type="hidden" name="_action" value="set_admin_permissions" />
+              <input type="hidden" name="user_id" value={u.id} />
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-xs font-medium text-blue-700 flex items-center gap-1.5"><Shield size={13} /> Uprawnienia administratora</span>
+                <button type="submit" disabled={savingPerms}
+                  className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-xs font-medium px-3 py-1.5 rounded-lg shrink-0">
+                  {savingPerms ? 'Zapisuję…' : 'Zapisz'}
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-x-6 gap-y-1.5">
+                <label className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer">
+                  <input type="checkbox" name="admin_can_assign_admin" value="1"
+                    checked={permAssignAdmin} onChange={e => setPermAssignAdmin(e.target.checked)}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                  Może tworzyć administratorów
+                </label>
+                <label className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer">
+                  <input type="checkbox" name="admin_can_assign_zarzad" value="1"
+                    checked={permAssignZarzad} onChange={e => setPermAssignZarzad(e.target.checked)}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                  Może tworzyć Zarząd
+                </label>
+                <label className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer">
+                  <input type="checkbox" name="admin_can_assign_pracownik" value="1"
+                    checked={permAssignPracownik} onChange={e => setPermAssignPracownik(e.target.checked)}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                  Może tworzyć Biuro
+                </label>
+                <label className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer">
+                  <input type="checkbox" name="admin_can_manage_rooms" value="1"
+                    checked={permManageRooms} onChange={e => setPermManageRooms(e.target.checked)}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                  Może zarządzać salami
+                </label>
+              </div>
+              {permFetcher.data && 'error' in permFetcher.data && (
+                <p className="text-xs text-red-600">{(permFetcher.data as { error: string }).error}</p>
+              )}
+            </permFetcher.Form>
           </td>
         </tr>
       )}
