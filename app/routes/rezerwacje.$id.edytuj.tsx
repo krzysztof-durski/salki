@@ -3,7 +3,6 @@ import type { Route } from "./+types/rezerwacje.$id.edytuj";
 import { getTokenFromRequest, getSessionUser, requireUser } from "~/lib/auth.server";
 import { queryOne, queryAll, execute } from "~/lib/db.server";
 import { logAction } from "~/lib/audit.server";
-import { sendEmail, tplBookingEdited } from "~/lib/email.server";
 import { isAdmin } from "~/types";
 import type { Booking, Room } from "~/types";
 
@@ -53,8 +52,6 @@ export async function action({ params, request, context }: Route.ActionArgs) {
   const attendeeCount = form.get("attendee_count") ? parseInt(form.get("attendee_count") as string, 10) : null;
   const requesterNote = (form.get("requester_note") as string)?.trim() || null;
   const adminNote = (form.get("admin_note") as string)?.trim() || null;
-  // "none" | "organiser" | "all"
-  const notify = (form.get("notify") as string) ?? "none";
   const bookingId = parseInt(params.id as string, 10);
   const adminUser = isAdmin(user.role);
 
@@ -100,14 +97,6 @@ export async function action({ params, request, context }: Route.ActionArgs) {
       return data({ error: "Konflikt — ktoś inny zmodyfikował tę rezerwację. Odśwież i spróbuj ponownie." }, { status: 409 });
     }
 
-    // Send notification email if requested
-    if (notify !== "none") {
-      const room = await queryOne<{ name: string }>(env.DB, "SELECT name FROM rooms WHERE id=?", [targetRoomId]);
-      const appUrl = new URL(request.url).origin;
-      const tpl = tplBookingEdited({ roomName: room!.name, date, startTime, endTime, adminNote, bookingId, appUrl });
-
-      await sendEmail(env, { to: booking.requester_email, ...tpl });
-    }
   } else {
     // Regular user: only pending, own booking, no room change
     const result = await execute(
@@ -210,26 +199,6 @@ export default function EdytujRezerwacje({ loaderData, actionData }: Route.Compo
               <textarea name="admin_note" rows={2} defaultValue={booking.admin_note ?? ''} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:outline-none" />
             </div>
 
-            <div className="space-y-2">
-              <p className="text-sm font-medium text-gray-700">Powiadomienia e-mail</p>
-              <div className="flex flex-col gap-2">
-                {[
-                  { value: "none",      label: "Nie wysyłaj" },
-                  { value: "organiser", label: "Wyślij do organizatora" },
-                ].map(opt => (
-                  <label key={opt.value} className="flex items-center gap-2.5 cursor-pointer text-sm text-gray-700">
-                    <input
-                      type="radio"
-                      name="notify"
-                      value={opt.value}
-                      defaultChecked={opt.value === "none"}
-                      className="accent-blue-600"
-                    />
-                    {opt.label}
-                  </label>
-                ))}
-              </div>
-            </div>
           </>
         )}
 
