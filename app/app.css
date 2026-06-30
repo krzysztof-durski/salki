@@ -42,6 +42,15 @@
   animation: nav-blink 1.3s ease-in-out infinite;
 }
 
+@keyframes slot-blink {
+  0%, 100% { background-color: #FDE68A; border-color: #F59E0B; }
+  50%       { background-color: #FEE2E2; border-color: #EF4444; }
+}
+
+.slot-blink {
+  animation: slot-blink 1.8s ease-in-out infinite;
+}
+
 html,
 body {
   @apply bg-white dark:bg-gray-950;

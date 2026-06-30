@@ -93,7 +93,7 @@ export default function Login({ actionData }: Route.ComponentProps) {
             {pending ? "Logowanie…" : "Zaloguj się"}
           </button>
           <p className="text-xs text-gray-400 text-center">
-            Jeśli zapomniałeś hasła, skontaktuj się z Administratorem.
+            Jeśli zapomniałeś hasła, skontaktuj się z recepcją.
           </p>
         </Form>
       </div>

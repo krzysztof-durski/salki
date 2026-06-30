@@ -1,10 +1,10 @@
-import { Outlet, Link, Form, useLocation, NavLink } from "react-router";
+import { Outlet, Link, Form, useLocation, NavLink, redirect } from "react-router";
 import type { Route } from "./+types/_app";
 import { getTokenFromRequest, getSessionUser, requireUser } from "~/lib/auth.server";
 import { queryOne } from "~/lib/db.server";
 import { canManageBookings, canManageUsers, canViewAuditLogs, canManageRooms } from "~/types";
 import {
-  CalendarDays, Settings, LogOut, Users, DoorOpen, ScrollText, ClipboardList, Menu, X, Bell, CalendarRange
+  CalendarDays, Settings, LogOut, Users, DoorOpen, ScrollText, ClipboardList, Menu, X, Bell, CalendarRange, CalendarCheck
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 
@@ -36,6 +36,13 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const { env } = context.cloudflare;
   const token = getTokenFromRequest(request);
   const user = requireUser(await getSessionUser(env.DB, token));
+
+  if (user.must_change_password) {
+    const url = new URL(request.url);
+    if (url.pathname !== "/ustawienia") {
+      throw redirect("/ustawienia?zmien-haslo=1");
+    }
+  }
 
   let pendingCount = 0;
   if (canManageBookings(user.role)) {
@@ -126,10 +133,11 @@ export default function AppShell({ loaderData }: Route.ComponentProps) {
 
   const nav = [
     { to: "/", label: "Kalendarz", icon: CalendarDays },
+    ...(canManageBookings(user.role) ? [{ to: "/admin/dzisiaj", label: "Dzisiaj", icon: CalendarCheck }] : []),
     ...(canManageBookings(user.role) ? [{ to: "/admin/rezerwacje", label: "Prośby o rezerwacje", icon: ClipboardList }] : []),
     ...(canManageBookings(user.role) ? [{ to: "/admin/panel", label: "Rezerwacje", icon: CalendarRange }] : []),
     ...(canManageUsers(user.role)    ? [{ to: "/admin/uzytkownicy", label: "Użytkownicy", icon: Users }] : []),
-    ...(canManageRooms(user.role)    ? [{ to: "/admin/sale", label: "Sale", icon: DoorOpen }] : []),
+    ...(canManageRooms(user)         ? [{ to: "/admin/sale", label: "Sale", icon: DoorOpen }] : []),
     ...(canViewAuditLogs(user.role)  ? [{ to: "/admin/logi", label: "Logi", icon: ScrollText }] : []),
     { to: "/powiadomienia", label: "Powiadomienia", icon: Bell },
     { to: "/ustawienia", label: "Ustawienia", icon: Settings },

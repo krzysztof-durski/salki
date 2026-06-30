@@ -21,6 +21,7 @@ export default [
 
     // Admin routes (admin + super_admin)
     ...prefix("admin", [
+      route("dzisiaj",        "routes/admin.dzisiaj.tsx"),
       route("rezerwacje",     "routes/admin.rezerwacje.tsx"),
       route("panel",          "routes/admin.panel.tsx"),
       route("uzytkownicy",    "routes/admin.uzytkownicy.tsx"),
