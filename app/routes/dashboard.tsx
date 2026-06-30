@@ -46,7 +46,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 
     bookings = await queryAll<Booking>(
       env.DB,
-      `SELECT b.*, r.name as room_name, u.name as requester_name
+      `SELECT b.*, r.name as room_name, u.name as requester_name, u.role as requester_role
        FROM bookings b
        JOIN rooms r ON r.id = b.room_id
        JOIN users u ON u.id = b.requester_id

@@ -5,19 +5,18 @@ import type { Route } from "./+types/rezerwacje.$id";
 import { getTokenFromRequest, getSessionUser, requireUser } from "~/lib/auth.server";
 import { queryOne, queryAll, execute } from "~/lib/db.server";
 import { logAction } from "~/lib/audit.server";
-import { sendEmail, tplApproved, tplRejected, tplCounterProposed, generateICS } from "~/lib/email.server";
 import { isAdmin, canManageBookings } from "~/types";
 import type { Booking, BookingChangeRequest, User } from "~/types";
-import { CheckCircle, XCircle, Clock, Edit2, RefreshCw, Trash2 } from "lucide-react";
+import { CheckCircle, XCircle, Clock, Edit2, RefreshCw, Trash2, Calendar } from "lucide-react";
 
 export async function loader({ params, request, context }: Route.LoaderArgs) {
   const { env } = context.cloudflare;
   const token = getTokenFromRequest(request);
   const user = requireUser(await getSessionUser(env.DB, token));
 
-  const booking = await queryOne<Booking>(
+  const booking = await queryOne<Booking & { room_category: string }>(
     env.DB,
-    `SELECT b.*, r.name as room_name, u.name as requester_name
+    `SELECT b.*, r.name as room_name, r.category as room_category, u.name as requester_name, u.email as requester_email
      FROM bookings b
      JOIN rooms r ON r.id = b.room_id
      JOIN users u ON u.id = b.requester_id
@@ -48,7 +47,20 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
     [booking.id]
   );
 
-  return { user, booking, changeRequests };
+  // null = not edited; string = original value before zarząd's direct edit
+  const editedFields: { date: string | null; hours: string | null; participants: string | null; note: string | null } =
+    { date: null, hours: null, participants: null, note: null };
+  if (isAdmin(user.role) && booking.zarzad_edited_fields) {
+    try {
+      const orig = JSON.parse(booking.zarzad_edited_fields) as Record<string, string>;
+      if ('date' in orig)         editedFields.date         = orig.date;
+      if ('hours' in orig)        editedFields.hours        = orig.hours;
+      if ('participants' in orig) editedFields.participants = orig.participants;
+      if ('note' in orig)         editedFields.note         = orig.note;
+    } catch {}
+  }
+
+  return { user, booking, changeRequests, isBoard: booking.room_category === 'board', editedFields };
 }
 
 export async function action({ params, request, context }: Route.ActionArgs) {
@@ -62,8 +74,6 @@ export async function action({ params, request, context }: Route.ActionArgs) {
 
   const booking = await queryOne<Booking>(env.DB, "SELECT * FROM bookings WHERE id = ?", [bookingId]);
   if (!booking) throw new Response(null, { status: 404 });
-
-  const appUrl = new URL(request.url).origin;
 
   // ── Admin actions ──────────────────────────────────────────────────────
 
@@ -91,21 +101,6 @@ export async function action({ params, request, context }: Route.ActionArgs) {
     );
     if (!result.meta.changes) return data({ error: "Konflikt — wniosek został już przetworzony." }, { status: 409 });
 
-    const room = await queryOne<{ name: string }>(env.DB, "SELECT name FROM rooms WHERE id=?", [booking.room_id]);
-    const requester = await queryOne<{ email: string; name: string }>(env.DB, "SELECT email, name FROM users WHERE id=?", [booking.requester_id]);
-
-    const ics = generateICS({
-      uid: `booking-${bookingId}@lafrentz`,
-      summary: booking.title || room!.name,
-      location: room!.name,
-      date: booking.date,
-      startTime: booking.start_time,
-      endTime: booking.end_time,
-    });
-    const icsAttachment = { filename: 'spotkanie.ics', content: ics, contentType: 'text/calendar; charset=UTF-8' };
-
-    const tpl = tplApproved({ roomName: room!.name, date: booking.date, startTime: booking.start_time, endTime: booking.end_time, adminNote });
-    await sendEmail(env, { to: requester!.email, ...tpl, attachments: [icsAttachment] });
     await execute(env.DB,
       "INSERT INTO notifications (user_id, booking_id, type) VALUES (?,?,'booking_approved')",
       [booking.requester_id, bookingId]
@@ -124,10 +119,6 @@ export async function action({ params, request, context }: Route.ActionArgs) {
     );
     if (!result.meta.changes) return data({ error: "Konflikt — wniosek został już przetworzony." }, { status: 409 });
 
-    const room = await queryOne<{ name: string }>(env.DB, "SELECT name FROM rooms WHERE id=?", [booking.room_id]);
-    const requester = await queryOne<{ email: string }>(env.DB, "SELECT email FROM users WHERE id=?", [booking.requester_id]);
-    const tpl = tplRejected({ roomName: room!.name, date: booking.date, adminNote });
-    await sendEmail(env, { to: requester!.email, ...tpl });
     await execute(env.DB,
       "INSERT INTO notifications (user_id, booking_id, type) VALUES (?,?,'booking_rejected')",
       [booking.requester_id, bookingId]
@@ -152,13 +143,6 @@ export async function action({ params, request, context }: Route.ActionArgs) {
     );
     if (!result.meta.changes) return data({ error: "Konflikt — wniosek został już przetworzony." }, { status: 409 });
 
-    const room = await queryOne<{ name: string }>(env.DB, "SELECT name FROM rooms WHERE id=?", [booking.room_id]);
-    const requester = await queryOne<{ email: string }>(env.DB, "SELECT email FROM users WHERE id=?", [booking.requester_id]);
-    const tpl = tplCounterProposed({
-      roomName: room!.name, originalDate: booking.date,
-      counterDate, counterStart, counterEnd, adminNote, bookingId, appUrl,
-    });
-    await sendEmail(env, { to: requester!.email, ...tpl });
     await execute(env.DB,
       "INSERT INTO notifications (user_id, booking_id, type) VALUES (?,?,'counter_proposed')",
       [booking.requester_id, bookingId]
@@ -237,7 +221,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function BookingDetail({ loaderData, actionData }: Route.ComponentProps) {
-  const { user, booking, changeRequests } = loaderData;
+  const { user, booking, changeRequests, isBoard, editedFields } = loaderData;
   const nav = useNavigation();
   const pending = nav.state === "submitting";
   const isOwner = booking.requester_id === user.id;
@@ -248,7 +232,7 @@ export default function BookingDetail({ loaderData, actionData }: Route.Componen
   return (
     <div className="w-full max-w-3xl mx-auto px-8 py-8 space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Rezerwacja #{booking.id}</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Rezerwacja: {booking.title}</h1>
         <Link to="/" className="text-sm text-gray-500 hover:text-gray-700">← Kalendarz</Link>
       </div>
 
@@ -260,12 +244,16 @@ export default function BookingDetail({ loaderData, actionData }: Route.Componen
       {/* Booking info */}
       <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-3 shadow-sm">
         <Row label="Sala" value={booking.room_name ?? '—'} />
-        <Row label="Data" value={booking.date} />
-        <Row label="Godziny" value={`${booking.start_time}–${booking.end_time}`} />
+        <EditableRow label="Data" value={booking.date} originalValue={isAdminUser ? editedFields.date : null} />
+        <EditableRow label="Godziny" value={`${booking.start_time}–${booking.end_time}`} originalValue={isAdminUser ? editedFields.hours : null} />
         {booking.title && <Row label="Tytuł" value={booking.title} />}
-        {booking.attendee_count && <Row label="Uczestnicy" value={`${booking.attendee_count} os.`} />}
-        {booking.requester_note && <Row label="Uwagi" value={booking.requester_note} />}
-        {isAdminUser && <Row label="Składający" value={booking.requester_name ?? '—'} />}
+        {(booking.attendee_count != null || editedFields.participants !== null) && (
+          <EditableRow label="Uczestnicy" value={booking.attendee_count != null ? `${booking.attendee_count} os.` : '—'} originalValue={isAdminUser ? editedFields.participants : null} />
+        )}
+        {(booking.requester_note || editedFields.note !== null) && (
+          <EditableRow label="Uwagi" value={booking.requester_note ?? '—'} originalValue={isAdminUser ? editedFields.note : null} />
+        )}
+        {isAdminUser && <Row label="Składający" value={booking.requester_name ? `${booking.requester_name} (${booking.requester_email})` : '—'} />}
         {booking.admin_note && <Row label="Notatka admina" value={booking.admin_note} />}
       </div>
 
@@ -326,23 +314,27 @@ export default function BookingDetail({ loaderData, actionData }: Route.Componen
           to={`/rezerwacje/${booking.id}/zmiana`}
           className="flex items-center gap-2 text-sm text-blue-600 hover:underline"
         >
-          <RefreshCw size={14} /> Złóż wniosek o zmianę
+          <RefreshCw size={14} /> {isBoard ? "Zmień rezerwację" : "Złóż wniosek o zmianę"}
         </Link>
       )}
 
+      {booking.status === 'approved' && (
+        <AddToCalendar booking={booking} />
+      )}
+
       {/* Admin action panel */}
-      {isAdminUser && (booking.status === 'pending' || booking.status === 'counter_proposed') && (
-        <AdminActions bookingId={booking.id} bookingVersion={booking.version} pending={pending} actionData={actionData} />
+      {isAdminUser && booking.status === 'pending' && (
+        <AdminActions bookingId={booking.id} bookingVersion={booking.version} pending={pending} actionData={actionData} bookingDate={booking.date} bookingStartTime={booking.start_time} bookingEndTime={booking.end_time} />
       )}
 
       {/* Change requests list */}
       {changeRequests.length > 0 && (
         <div className="space-y-3">
           <h2 className="text-lg font-semibold text-gray-900">Wnioski o zmianę</h2>
-          {changeRequests.map(cr => (
+          {changeRequests.map((cr, index) => (
             <div key={cr.id} className="bg-white border border-gray-200 rounded-xl p-4 space-y-2 shadow-sm">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-700">Wniosek #{cr.id}</span>
+                <span className="text-sm font-medium text-gray-700">Wniosek #{changeRequests.length - index}</span>
                 <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[cr.status]}`}>
                   {STATUS_LABELS[cr.status]}
                 </span>
@@ -384,50 +376,265 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-function AdminActions({ bookingId, bookingVersion, pending, actionData }: {
-  bookingId: number; bookingVersion: number; pending: boolean; actionData: { error?: string } | undefined;
-}) {
+function EditableRow({ label, value, originalValue }: { label: string; value: string; originalValue: string | null }) {
   return (
-    <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 space-y-4">
-      <h3 className="font-semibold text-gray-900">Akcje administratora</h3>
-      <input type="hidden" name="booking_version" value={bookingVersion} />
+    <div className="flex gap-4 text-sm">
+      <span className="text-gray-500 w-32 shrink-0">{label}</span>
+      <span className="text-gray-900">
+        {value}
+        {originalValue !== null && (
+          <span className="ml-2 text-xs text-amber-700">
+            (edytowane | oryginalnie: {originalValue || '—'})
+          </span>
+        )}
+      </span>
+    </div>
+  );
+}
 
-      {/* Approve */}
-      <Form method="post" className="space-y-2">
-        <input type="hidden" name="_action" value="approve" />
-        <textarea name="admin_note" rows={1} placeholder="Notatka (opcjonalnie)" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-green-500 focus:outline-none" />
-        <button type="submit" disabled={pending} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium px-4 py-2 rounded-lg">
-          <CheckCircle size={16} /> Zatwierdź
-        </button>
-      </Form>
+function addMinutes(time: string, minutes: number): string {
+  const [h, m] = time.split(":").map(Number);
+  const total = h * 60 + m + minutes;
+  const hh = String(Math.floor(total / 60) % 24).padStart(2, "0");
+  const mm = String(total % 60).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
 
-      <hr className="border-gray-200" />
+function durationMinutes(start: string, end: string): number {
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  return (eh * 60 + em) - (sh * 60 + sm);
+}
 
-      {/* Reject */}
-      <Form method="post" className="space-y-2">
-        <input type="hidden" name="_action" value="reject" />
-        <textarea name="admin_note" rows={1} placeholder="Powód odrzucenia (opcjonalnie)" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-red-500 focus:outline-none" />
-        <button type="submit" disabled={pending} className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium px-4 py-2 rounded-lg">
-          <XCircle size={16} /> Odrzuć
-        </button>
-      </Form>
+function AdminActions({ bookingId, bookingVersion, pending, actionData, bookingDate, bookingStartTime, bookingEndTime }: {
+  bookingId: number; bookingVersion: number; pending: boolean; actionData: { error?: string } | undefined;
+  bookingDate: string; bookingStartTime: string; bookingEndTime: string;
+}) {
+  const [showCounter, setShowCounter] = useState(false);
+  const [counterStartTime, setCounterStartTime] = useState("");
+  const [counterEndTime, setCounterEndTime] = useState("");
 
-      <hr className="border-gray-200" />
+  function handleStartTimeChange(value: string) {
+    setCounterStartTime(value);
+    if (value && bookingStartTime && bookingEndTime) {
+      const duration = durationMinutes(bookingStartTime, bookingEndTime);
+      setCounterEndTime(addMinutes(value, duration));
+    }
+  }
 
-      {/* Counter-propose */}
-      <Form method="post" className="space-y-2">
-        <input type="hidden" name="_action" value="counter" />
-        <p className="text-sm font-medium text-gray-700">Kontrpropozycja terminu</p>
-        <input type="date" name="counter_date" required className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-400 focus:outline-none" />
-        <div className="grid grid-cols-2 gap-2">
-          <input type="time" name="counter_start_time" required className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-400 focus:outline-none" />
-          <input type="time" name="counter_end_time" required className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-400 focus:outline-none" />
+  return (
+    <div className="border border-gray-200 rounded-xl overflow-hidden">
+      <div className="bg-gray-50 border-b border-gray-200 px-5 py-3 flex items-center gap-2">
+        <RefreshCw size={15} className="text-gray-500" />
+        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Akcje administratora</h3>
+      </div>
+
+      <div className="p-5 space-y-4">
+        {/* Approve + Reject side by side */}
+        <div className="grid grid-cols-2 gap-3">
+          {/* Approve */}
+          <div className="border border-green-200 bg-green-50 rounded-xl p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <CheckCircle size={16} className="text-green-600" />
+              <span className="text-sm font-semibold text-green-800">Zatwierdź</span>
+            </div>
+            <Form method="post" className="space-y-2">
+              <input type="hidden" name="_action" value="approve" />
+              <input type="hidden" name="booking_version" value={bookingVersion} />
+              <textarea
+                name="admin_note"
+                rows={2}
+                placeholder="Notatka (opcjonalnie)"
+                className="w-full border border-green-200 rounded-lg px-3 py-2 text-sm resize-none bg-white focus:ring-2 focus:ring-green-400 focus:outline-none placeholder-gray-400"
+              />
+              <button
+                type="submit"
+                disabled={pending}
+                className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+              >
+                <CheckCircle size={15} /> Zatwierdź
+              </button>
+            </Form>
+          </div>
+
+          {/* Reject */}
+          <div className="border border-red-200 bg-red-50 rounded-xl p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <XCircle size={16} className="text-red-600" />
+              <span className="text-sm font-semibold text-red-800">Odrzuć</span>
+            </div>
+            <Form method="post" className="space-y-2">
+              <input type="hidden" name="_action" value="reject" />
+              <input type="hidden" name="booking_version" value={bookingVersion} />
+              <textarea
+                name="admin_note"
+                rows={2}
+                placeholder="Powód odrzucenia (opcjonalnie)"
+                className="w-full border border-red-200 rounded-lg px-3 py-2 text-sm resize-none bg-white focus:ring-2 focus:ring-red-400 focus:outline-none placeholder-gray-400"
+              />
+              <button
+                type="submit"
+                disabled={pending}
+                className="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+              >
+                <XCircle size={15} /> Odrzuć
+              </button>
+            </Form>
+          </div>
         </div>
-        <textarea name="admin_note" rows={1} placeholder="Notatka (opcjonalnie)" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-orange-400 focus:outline-none" />
-        <button type="submit" disabled={pending} className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium px-4 py-2 rounded-lg">
-          <Clock size={16} /> Zaproponuj inny termin
-        </button>
-      </Form>
+
+        {/* Counter-propose — collapsible */}
+        <div className="border border-orange-200 rounded-xl overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setShowCounter(v => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 bg-orange-50 hover:bg-orange-100 transition-colors text-left"
+          >
+            <div className="flex items-center gap-2">
+              <Clock size={16} className="text-orange-500" />
+              <span className="text-sm font-semibold text-orange-800">Zaproponuj inny termin</span>
+            </div>
+            <span className="text-orange-400 text-lg leading-none">{showCounter ? '−' : '+'}</span>
+          </button>
+
+          {showCounter && (
+            <Form method="post" className="px-4 pb-4 pt-3 space-y-3 bg-orange-50">
+              <input type="hidden" name="_action" value="counter" />
+              <input type="hidden" name="booking_version" value={bookingVersion} />
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-orange-700 uppercase tracking-wide">Data</label>
+                <input
+                  type="date"
+                  name="counter_date"
+                  required
+                  defaultValue={bookingDate}
+                  className="w-full border border-orange-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-orange-400 focus:outline-none"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-orange-700 uppercase tracking-wide">Godziny</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="time"
+                    name="counter_start_time"
+                    required
+                    value={counterStartTime}
+                    onChange={e => handleStartTimeChange(e.target.value)}
+                    className="border border-orange-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-orange-400 focus:outline-none"
+                  />
+                  <input
+                    type="time"
+                    name="counter_end_time"
+                    required
+                    value={counterEndTime}
+                    onChange={e => setCounterEndTime(e.target.value)}
+                    className="border border-orange-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-orange-400 focus:outline-none"
+                  />
+                </div>
+              </div>
+              <textarea
+                name="admin_note"
+                rows={2}
+                placeholder="Notatka (opcjonalnie)"
+                className="w-full border border-orange-200 rounded-lg px-3 py-2 text-sm resize-none bg-white focus:ring-2 focus:ring-orange-400 focus:outline-none placeholder-gray-400"
+              />
+              <button
+                type="submit"
+                disabled={pending}
+                className="w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+              >
+                <Clock size={15} /> Zaproponuj inny termin
+              </button>
+            </Form>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AddToCalendar({ booking }: { booking: Booking & { room_name?: string } }) {
+  const [open, setOpen] = useState(false);
+
+  const title = booking.title ?? 'Rezerwacja sali';
+  const location = booking.room_name ?? '';
+  const description = booking.requester_note ?? '';
+
+  const dateStr = booking.date.replace(/-/g, '');
+  const startStr = booking.start_time.replace(':', '') + '00';
+  const endStr = booking.end_time.replace(':', '') + '00';
+  const dtStart = `${dateStr}T${startStr}`;
+  const dtEnd = `${dateStr}T${endStr}`;
+
+  function escapeIcs(s: string) {
+    return s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+  }
+
+  function downloadIcs() {
+    const lines = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Salki//Rezerwacje//PL',
+      'BEGIN:VEVENT',
+      `DTSTART:${dtStart}`,
+      `DTEND:${dtEnd}`,
+      `SUMMARY:${escapeIcs(title)}`,
+      `LOCATION:${escapeIcs(location)}`,
+      description ? `DESCRIPTION:${escapeIcs(description)}` : null,
+      `UID:booking-${booking.id}@salki`,
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].filter(Boolean).join('\r\n');
+
+    const blob = new Blob([lines], { type: 'text/calendar' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `rezerwacja-${booking.id}.ics`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setOpen(false);
+  }
+
+  const gcUrl = new URL('https://calendar.google.com/calendar/render');
+  gcUrl.searchParams.set('action', 'TEMPLATE');
+  gcUrl.searchParams.set('text', title);
+  gcUrl.searchParams.set('dates', `${dtStart}/${dtEnd}`);
+  gcUrl.searchParams.set('location', location);
+  if (description) gcUrl.searchParams.set('details', description);
+
+  return (
+    <div className="relative inline-block">
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-2 text-sm text-green-700 hover:text-green-900 font-medium"
+      >
+        <Calendar size={14} /> Dodaj do kalendarza
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-20 min-w-44">
+            <a
+              href={gcUrl.toString()}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              onClick={() => setOpen(false)}
+            >
+              Google Calendar
+            </a>
+            <button
+              type="button"
+              onClick={downloadIcs}
+              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            >
+              Apple / Outlook (.ics)
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

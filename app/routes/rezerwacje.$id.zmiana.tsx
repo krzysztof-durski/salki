@@ -1,9 +1,9 @@
 import { redirect, data, Form, Link, useNavigation } from "react-router";
 import type { Route } from "./+types/rezerwacje.$id.zmiana";
 import { getTokenFromRequest, getSessionUser, requireUser } from "~/lib/auth.server";
-import { queryOne, queryAll, execute } from "~/lib/db.server";
+import { queryOne, execute } from "~/lib/db.server";
 import { logAction } from "~/lib/audit.server";
-import { sendEmail, tplChangeRequestSubmitted } from "~/lib/email.server";
+import { notifyAdmins } from "~/lib/notify.server";
 import { canManageBookings, isAdmin } from "~/types";
 import type { Booking, BookingChangeRequest } from "~/types";
 
@@ -12,16 +12,16 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
   const token = getTokenFromRequest(request);
   const user = requireUser(await getSessionUser(env.DB, token));
 
-  const booking = await queryOne<Booking>(
+  const booking = await queryOne<Booking & { room_category: string }>(
     env.DB,
-    `SELECT b.*, r.name as room_name FROM bookings b JOIN rooms r ON r.id=b.room_id WHERE b.id=?`,
+    `SELECT b.*, r.name as room_name, r.category as room_category FROM bookings b JOIN rooms r ON r.id=b.room_id WHERE b.id=?`,
     [params.id]
   );
   if (!booking) throw new Response(null, { status: 404 });
   if (booking.requester_id !== user.id && !isAdmin(user.role)) throw new Response(null, { status: 403 });
   if (booking.status !== 'approved') return redirect(`/rezerwacje/${booking.id}`);
 
-  return { booking };
+  return { booking, isBoard: booking.room_category === 'board' };
 }
 
 export async function action({ params, request, context }: Route.ActionArgs) {
@@ -33,9 +33,9 @@ export async function action({ params, request, context }: Route.ActionArgs) {
   const _action = form.get("_action") as string;
   const bookingId = parseInt(params.id as string, 10);
 
-  const booking = await queryOne<Booking>(
+  const booking = await queryOne<Booking & { room_category: string }>(
     env.DB,
-    `SELECT b.*, r.name as room_name FROM bookings b JOIN rooms r ON r.id=b.room_id WHERE b.id=?`,
+    `SELECT b.*, r.name as room_name, r.category as room_category FROM bookings b JOIN rooms r ON r.id=b.room_id WHERE b.id=?`,
     [bookingId]
   );
   if (!booking) throw new Response(null, { status: 404 });
@@ -79,6 +79,7 @@ export async function action({ params, request, context }: Route.ActionArgs) {
       if (cr.new_title)          { updates.push("title=?");         vals.push(cr.new_title); }
       if (cr.new_attendee_count) { updates.push("attendee_count=?"); vals.push(cr.new_attendee_count); }
       if (cr.new_attendee_emails){ updates.push("attendee_emails=?"); vals.push(cr.new_attendee_emails); }
+      if (cr.requester_note)     { updates.push("requester_note=?"); vals.push(cr.requester_note); }
 
       if (updates.length > 0) {
         await execute(
@@ -112,7 +113,7 @@ export async function action({ params, request, context }: Route.ActionArgs) {
     return redirect(`/rezerwacje/${bookingId}`);
   }
 
-  // ── User: submit change request ────────────────────────────────────────
+  // ── User: edit or submit change request ───────────────────────────────
   if (booking.requester_id !== user.id) throw new Response(null, { status: 403 });
   if (booking.status !== 'approved') return data({ error: "Można zmieniać tylko zatwierdzone rezerwacje." }, { status: 400 });
 
@@ -122,51 +123,179 @@ export async function action({ params, request, context }: Route.ActionArgs) {
   const newTitle = (form.get("new_title") as string)?.trim() || null;
   const newAttendeeCount = form.get("new_attendee_count") ? parseInt(form.get("new_attendee_count") as string, 10) : null;
   const requesterNote = (form.get("requester_note") as string)?.trim() || null;
+  const notifyReception = form.get("notify_reception") === "on";
 
-  if (!newDate && !newStartTime && !newEndTime && !newTitle) {
+  if (booking.room_category === 'board') {
+    // Board rooms: apply change directly, no approval needed
+    const targetDate = newDate ?? booking.date;
+    const targetStart = newStartTime ?? booking.start_time;
+    const targetEnd = newEndTime ?? booking.end_time;
+
+    if (targetStart >= targetEnd) {
+      return data({ error: "Godzina końca musi być późniejsza niż godzina początku." }, { status: 400 });
+    }
+
+    const conflict = await queryOne<{ n: number }>(
+      env.DB,
+      `SELECT COUNT(*) as n FROM bookings
+       WHERE room_id = ? AND date = ? AND status = 'approved' AND id != ?
+         AND start_time < ? AND end_time > ?`,
+      [booking.room_id, targetDate, bookingId, targetEnd, targetStart]
+    );
+    if ((conflict?.n ?? 0) > 0) {
+      return data({ error: "Ta sala jest już zarezerwowana w wybranym terminie." }, { status: 409 });
+    }
+
+    const originals: Record<string, string> = {};
+    if (targetDate !== booking.date)
+      originals.date = booking.date;
+    if (targetStart !== booking.start_time || targetEnd !== booking.end_time)
+      originals.hours = `${booking.start_time}–${booking.end_time}`;
+    if ((newAttendeeCount ?? booking.attendee_count) != booking.attendee_count)
+      originals.participants = booking.attendee_count != null ? String(booking.attendee_count) : '';
+    if ((requesterNote ?? booking.requester_note ?? '') !== (booking.requester_note ?? ''))
+      originals.note = booking.requester_note ?? '';
+
+    await execute(
+      env.DB,
+      `UPDATE bookings
+       SET date=?, start_time=?, end_time=?, title=?, attendee_count=?, requester_note=?,
+           zarzad_edited_fields=?, version=version+1, updated_at=CURRENT_TIMESTAMP
+       WHERE id=? AND status='approved' AND requester_id=?`,
+      [targetDate, targetStart, targetEnd, newTitle ?? booking.title, newAttendeeCount ?? booking.attendee_count,
+       requesterNote ?? booking.requester_note,
+       Object.keys(originals).length ? JSON.stringify(originals) : null,
+       bookingId, user.id]
+    );
+
+    await logAction(env.DB, {
+      userId: user.id,
+      action: 'booking.zarzad_direct_edit',
+      entityType: 'booking',
+      entityId: bookingId,
+      details: {
+        oldDate: booking.date,                              date: targetDate,
+        oldStartTime: booking.start_time,                   startTime: targetStart,
+        oldEndTime: booking.end_time,                       endTime: targetEnd,
+        oldAttendeeCount: booking.attendee_count ?? null,   attendeeCount: newAttendeeCount ?? booking.attendee_count ?? null,
+        oldRequesterNote: booking.requester_note ?? null,   requesterNote: requesterNote ?? booking.requester_note ?? null,
+      },
+    });
+
+    if (user.role === 'zarzad' && notifyReception) {
+      await notifyAdmins(env.DB, bookingId, 'zarzad_edited');
+    }
+
+    return redirect(`/rezerwacje/${bookingId}`);
+  }
+
+  // General rooms — detect which fields actually changed
+  const hasDateChange     = newDate !== null && newDate !== booking.date;
+  const hasStartChange    = newStartTime !== null && newStartTime !== booking.start_time;
+  const hasEndChange      = newEndTime !== null && newEndTime !== booking.end_time;
+  const hasTitleChange    = (newTitle ?? null) !== (booking.title ?? null);
+  const hasAttendeeChange = newAttendeeCount !== null && newAttendeeCount !== booking.attendee_count;
+  const hasNoteChange     = requesterNote !== (booking.requester_note ?? null);
+  const hasCRChanges      = hasDateChange || hasStartChange || hasEndChange || hasAttendeeChange;
+
+  if (!hasCRChanges && !hasTitleChange && !hasNoteChange) {
     return data({ error: "Podaj przynajmniej jedną zmianę." }, { status: 400 });
   }
 
-  const result = await execute(
-    env.DB,
-    `INSERT INTO booking_change_requests
-       (booking_id, requester_id, new_date, new_start_time, new_end_time, new_title,
-        new_attendee_count, requester_note)
-     VALUES (?,?,?,?,?,?,?,?)`,
-    [bookingId, user.id, newDate, newStartTime, newEndTime, newTitle, newAttendeeCount, requesterNote]
-  );
+  // Notes always apply directly without admin approval
+  if (hasNoteChange) {
+    await execute(
+      env.DB,
+      `UPDATE bookings SET requester_note=?, version=version+1, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+      [requesterNote, bookingId]
+    );
+  }
 
-  await logAction(env.DB, {
-    userId: user.id,
-    action: 'change_request.submitted',
-    entityType: 'booking',
-    entityId: bookingId,
-  });
+  // Build notification details
+  const notifDetails: Record<string, { from: unknown; to: unknown }> = {};
+  if (hasNoteChange)
+    notifDetails.note = { from: booking.requester_note ?? null, to: requesterNote };
+  if (hasDateChange)
+    notifDetails.date = { from: booking.date, to: newDate };
+  if (hasStartChange || hasEndChange)
+    notifDetails.hours = {
+      from: `${booking.start_time}–${booking.end_time}`,
+      to:   `${newStartTime ?? booking.start_time}–${newEndTime ?? booking.end_time}`,
+    };
+  if (hasTitleChange)
+    notifDetails.title = { from: booking.title ?? null, to: newTitle };
+  if (hasAttendeeChange)
+    notifDetails.attendees = { from: booking.attendee_count ?? null, to: newAttendeeCount };
 
-  // Notify on-duty admins
-  const onDutyAdmins = await queryAll<{ email: string }>(
-    env.DB,
-    "SELECT email FROM users WHERE role IN ('admin','super_admin') AND is_active=1 AND on_duty=1"
-  );
+  // Title-only (+ possibly note) — apply directly, no CR
+  if (hasTitleChange && !hasCRChanges) {
+    await execute(
+      env.DB,
+      `UPDATE bookings SET title=?, version=version+1, updated_at=CURRENT_TIMESTAMP
+       WHERE id=? AND status='approved' AND requester_id=?`,
+      [newTitle, bookingId, user.id]
+    );
+    await logAction(env.DB, {
+      userId: user.id,
+      action: 'booking.title_changed',
+      entityType: 'booking',
+      entityId: bookingId,
+      details: { oldTitle: booking.title, newTitle },
+    });
+    if (hasNoteChange) {
+      await notifyAdmins(env.DB, bookingId, 'note_changed', JSON.stringify(notifDetails));
+    }
+    return redirect(`/rezerwacje/${bookingId}`);
+  }
 
-  if (onDutyAdmins.length > 0) {
-    const appUrl = new URL(request.url).origin;
-    const tpl = tplChangeRequestSubmitted({ requesterName: user.name, roomName: booking.room_name!, bookingId, appUrl });
-    await sendEmail(env, { to: onDutyAdmins.map(a => a.email), ...tpl });
+  // Date / time / attendee changes go through the change request flow
+  if (hasCRChanges) {
+    await execute(
+      env.DB,
+      `INSERT INTO booking_change_requests
+         (booking_id, requester_id, new_date, new_start_time, new_end_time, new_title,
+          new_attendee_count, requester_note)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      [bookingId, user.id,
+       hasDateChange     ? newDate           : null,
+       hasStartChange    ? newStartTime      : null,
+       hasEndChange      ? newEndTime        : null,
+       hasTitleChange    ? newTitle          : null,
+       hasAttendeeChange ? newAttendeeCount  : null,
+       null]
+    );
+    await logAction(env.DB, {
+      userId: user.id,
+      action: 'change_request.submitted',
+      entityType: 'booking',
+      entityId: bookingId,
+    });
+    await notifyAdmins(env.DB, bookingId, 'change_requested', JSON.stringify(notifDetails));
+  } else {
+    // Note-only change
+    await logAction(env.DB, {
+      userId: user.id,
+      action: 'booking.note_updated',
+      entityType: 'booking',
+      entityId: bookingId,
+    });
+    await notifyAdmins(env.DB, bookingId, 'note_changed', JSON.stringify(notifDetails));
   }
 
   return redirect(`/rezerwacje/${bookingId}`);
 }
 
 export default function ZmianaRezerwacji({ loaderData, actionData }: Route.ComponentProps) {
-  const { booking } = loaderData;
+  const { booking, isBoard } = loaderData;
   const nav = useNavigation();
   const pending = nav.state === "submitting";
 
   return (
     <div className="w-full max-w-3xl mx-auto px-8 py-8">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Wniosek o zmianę rezerwacji</h1>
+        <h1 className="text-2xl font-bold text-gray-900">
+          {isBoard ? "Zmień rezerwację" : "Wniosek o zmianę rezerwacji"}
+        </h1>
         <Link to={`/rezerwacje/${booking.id}`} className="text-sm text-gray-500 hover:text-gray-700">Anuluj</Link>
       </div>
 
@@ -175,31 +304,33 @@ export default function ZmianaRezerwacji({ loaderData, actionData }: Route.Compo
       </div>
 
       <Form method="post" className="space-y-5 bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-        <p className="text-sm text-gray-500">Wypełnij tylko te pola, które chcesz zmienić.</p>
+        {!isBoard && (
+          <p className="text-sm text-gray-500">Wypełnij tylko te pola, które chcesz zmienić.</p>
+        )}
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Nowy tytuł</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Tytuł</label>
           <input name="new_title" type="text" defaultValue={booking.title ?? ""} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Nowa data</label>
-          <input name="new_date" type="date" defaultValue={booking.date} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+          <label className="block text-sm font-medium text-gray-700 mb-1">Data {isBoard && "*"}</label>
+          <input name="new_date" type="date" required={isBoard} defaultValue={booking.date} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Nowa godzina od</label>
-            <input name="new_start_time" type="time" defaultValue={booking.start_time} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+            <label className="block text-sm font-medium text-gray-700 mb-1">Od {isBoard && "*"}</label>
+            <input name="new_start_time" type="time" required={isBoard} defaultValue={booking.start_time} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Nowa godzina do</label>
-            <input name="new_end_time" type="time" defaultValue={booking.end_time} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+            <label className="block text-sm font-medium text-gray-700 mb-1">Do {isBoard && "*"}</label>
+            <input name="new_end_time" type="time" required={isBoard} defaultValue={booking.end_time} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
           </div>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Nowa liczba uczestników</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Liczba uczestników</label>
           <input name="new_attendee_count" type="text" inputMode="numeric" pattern="[0-9]*" defaultValue={booking.attendee_count ?? ""} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
         </div>
 
@@ -208,13 +339,27 @@ export default function ZmianaRezerwacji({ loaderData, actionData }: Route.Compo
           <textarea name="requester_note" rows={2} defaultValue={booking.requester_note ?? ""} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:outline-none" />
         </div>
 
+        {isBoard && (
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              name="notify_reception"
+              defaultChecked
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            Powiadom Recepcję o zmianie
+          </label>
+        )}
+
         {actionData?.error && (
           <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{actionData.error}</p>
         )}
 
         <div className="flex gap-3 pt-2">
           <button type="submit" disabled={pending} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-medium rounded-lg px-4 py-2.5 text-sm transition-colors">
-            {pending ? "Wysyłam…" : "Złóż wniosek o zmianę"}
+            {pending
+              ? (isBoard ? "Zapisuję…" : "Wysyłam…")
+              : (isBoard ? "Zapisz zmiany" : "Złóż wniosek o zmianę")}
           </button>
         </div>
       </Form>

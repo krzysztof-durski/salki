@@ -3,9 +3,9 @@ import type { Route } from "./+types/rezerwacje.nowa";
 import { getTokenFromRequest, getSessionUser, requireUser } from "~/lib/auth.server";
 import { queryAll, queryOne, execute } from "~/lib/db.server";
 import { logAction } from "~/lib/audit.server";
-import { sendEmail, tplNewRequest, tplApproved, generateICS } from "~/lib/email.server";
 import { canDirectBookBoardRoom, canDirectBookGeneralRoom } from "~/types";
 import type { Room, User } from "~/types";
+import { notifyAdmins } from "~/lib/notify.server";
 
 export async function loader({ request, context }: Route.LoaderArgs) {
   const { env } = context.cloudflare;
@@ -45,6 +45,7 @@ export async function action({ request, context }: Route.ActionArgs) {
   const title = (form.get("title") as string)?.trim() || null;
   const attendeeCount = form.get("attendee_count") ? parseInt(form.get("attendee_count") as string, 10) : null;
   const requesterNote = (form.get("requester_note") as string)?.trim() || null;
+  const notifyReception = form.get("notify_reception") === "on";
 
   if (!roomId || !date || !startTime || !endTime) {
     return data({ error: "Wypełnij wymagane pola." }, { status: 400 });
@@ -96,43 +97,11 @@ export async function action({ request, context }: Route.ActionArgs) {
     ipAddress: request.headers.get('CF-Connecting-IP'),
   });
 
-  const appUrl = new URL(request.url).origin;
-
-  if (status === 'pending') {
-    // Notify admins of the new request
-    const onDutyAdmins = await queryAll<{ email: string }>(
-      env.DB,
-      `SELECT email FROM users WHERE role IN ('admin','super_admin') AND is_active = 1 AND on_duty = 1`
-    );
-
-    if (onDutyAdmins.length > 0) {
-      const tpl = tplNewRequest({
-        requesterName: user.name,
-        roomName: room.name,
-        date,
-        startTime,
-        endTime,
-        note: requesterNote,
-        bookingId,
-        appUrl,
-      });
-      await sendEmail(env, { to: onDutyAdmins.map(a => a.email), ...tpl });
-    }
-  } else {
-    // Direct booking — confirm to requester, then separately to attendees
-    const ics = generateICS({
-      uid: `booking-${bookingId}@lafrentz`,
-      summary: title || room.name,
-      location: room.name,
-      date,
-      startTime,
-      endTime,
-    });
-    const icsAttachment = { filename: 'spotkanie.ics', content: ics, contentType: 'text/calendar; charset=UTF-8' };
-
-    const tpl = tplApproved({ roomName: room.name, date, startTime, endTime, adminNote: null });
-    await sendEmail(env, { to: user.email, ...tpl, attachments: [icsAttachment] });
-
+  if (user.role === 'zarzad' && isDirect && notifyReception) {
+    await notifyAdmins(env.DB, bookingId, 'zarzad_created');
+  }
+  if (!isDirect) {
+    await notifyAdmins(env.DB, bookingId, 'booking_requested');
   }
 
   return redirect(`/rezerwacje/${bookingId}`);
@@ -230,6 +199,18 @@ export default function NowaRezerwacja({ loaderData, actionData }: Route.Compone
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none"
           />
         </div>
+
+        {user.role === 'zarzad' && (
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              name="notify_reception"
+              defaultChecked
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            Powiadom Recepcję o rezerwacji
+          </label>
+        )}
 
         {actionData?.error && (
           <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">

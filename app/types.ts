@@ -20,6 +20,10 @@ export interface User {
   is_active: number;
   on_duty: number;
   preferred_room_id: number | null;
+  admin_can_assign_admin: number;
+  admin_can_assign_zarzad: number;
+  admin_can_assign_pracownik: number;
+  admin_can_manage_rooms: number;
   created_at: string;
   updated_at: string;
 }
@@ -39,6 +43,8 @@ export interface Booking {
   room_name?: string;
   requester_id: number;
   requester_name?: string;
+  requester_role?: string;
+  requester_email?: string;
   created_by_admin_id: number | null;
   title: string | null;
   date: string;
@@ -53,6 +59,7 @@ export interface Booking {
   counter_start_time: string | null;
   counter_end_time: string | null;
   version: number;
+  zarzad_edited_fields: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -111,8 +118,10 @@ export function canAssignZarzadRole(role: Role): boolean {
   return role === 'super_admin';
 }
 
-export function canManageRooms(role: Role): boolean {
-  return role === 'super_admin';
+export function canManageRooms(user: User): boolean {
+  if (user.role === 'super_admin') return true;
+  if (user.role === 'admin') return user.admin_can_manage_rooms === 1;
+  return false;
 }
 
 export function canViewAuditLogs(role: Role): boolean {
@@ -123,8 +132,14 @@ export function isAdmin(role: Role): boolean {
   return role === 'super_admin' || role === 'admin';
 }
 
-export function assignableRoles(actorRole: Role): Role[] {
-  const all: Role[] = ['admin', 'zarzad', 'pracownik'];
-  if (actorRole === 'super_admin') return all;
-  return all.filter(r => r !== 'zarzad');
+export function assignableRoles(user: User): Role[] {
+  if (user.role === 'super_admin') return ['admin', 'zarzad', 'pracownik'];
+  if (user.role === 'admin') {
+    const roles: Role[] = [];
+    if (user.admin_can_assign_admin)     roles.push('admin');
+    if (user.admin_can_assign_zarzad)    roles.push('zarzad');
+    if (user.admin_can_assign_pracownik) roles.push('pracownik');
+    return roles;
+  }
+  return [];
 }
