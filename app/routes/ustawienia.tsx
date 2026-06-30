@@ -59,18 +59,6 @@ export async function action({ request, context }: Route.ActionArgs) {
     return redirect("/ustawienia?ok=1");
   }
 
-  if (_action === "toggle_duty") {
-    if (user.role === 'admin' || user.role === 'super_admin') {
-      const turningOff = user.on_duty === 1;
-      await execute(
-        env.DB,
-        "UPDATE users SET on_duty=CASE WHEN on_duty=1 THEN 0 ELSE 1 END, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-        [user.id]
-      );
-    }
-    return redirect("/ustawienia");
-  }
-
   return null;
 }
 
@@ -150,29 +138,6 @@ export default function Ustawienia({ loaderData, actionData }: Route.ComponentPr
         </div>
       )}
 
-      {/* On-duty toggle for admins */}
-      {(user.role === 'admin' || user.role === 'super_admin') && !forcePasswordChange && (
-        <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm space-y-3">
-          <h2 className="font-semibold text-gray-900">Dyżur</h2>
-          <p className="text-sm text-gray-500">
-            Gdy dyżur jest aktywny, otrzymujesz e-maile o nowych wnioskach o rezerwację.
-          </p>
-          <Form method="post">
-            <input type="hidden" name="_action" value="toggle_duty" />
-            <button
-              type="submit"
-              disabled={pending}
-              className={`text-sm font-medium px-4 py-2 rounded-lg transition-colors ${
-                user.on_duty
-                  ? "bg-green-100 text-green-800 hover:bg-green-200"
-                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-              }`}
-            >
-              {user.on_duty ? "Dyżur aktywny — wyłącz" : "Dyżur nieaktywny — włącz"}
-            </button>
-          </Form>
-        </div>
-      )}
     </div>
   );
 }
