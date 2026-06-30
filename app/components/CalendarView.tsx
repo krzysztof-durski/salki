@@ -73,6 +73,19 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
     navigate(`/rezerwacje/nowa?sala=${activeRoomId}&data=${date}&od=${startTime}&do=${endTime}`);
   }
 
+  function isRangeOccupied(dayIndex: number, loSlot: number, hiSlot: number): boolean {
+    const date = weekDates[dayIndex];
+    const dayBks = roomBookings.filter(b => {
+      const effDate = b.status === 'counter_proposed' && b.counter_date ? b.counter_date : b.date;
+      return effDate === date;
+    });
+    return dayBks.some(b => {
+      const effStart = b.status === 'counter_proposed' && b.counter_start_time ? b.counter_start_time : b.start_time;
+      const effEnd = b.status === 'counter_proposed' && b.counter_end_time ? b.counter_end_time : b.end_time;
+      return timeToSlot(effStart) < hiSlot + 1 && timeToSlot(effEnd) > loSlot;
+    });
+  }
+
   // ── Slot math ────────────────────────────────────────────────────────────────
 
   // clientY → slot index, measured relative to the slot grid element itself.
@@ -112,12 +125,14 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
     setDragState(null);
     const lo = Math.min(startSlot, endSlot);
     const hi = Math.max(startSlot, endSlot);
+    if (isRangeOccupied(dayIndex, lo, hi)) return;
     openNewBooking(weekDates[dayIndex], slotToTime(lo), slotToTime(hi + 1));
   }
 
   function handleDayClick(dayIndex: number, e: React.MouseEvent<HTMLDivElement>) {
     if (dragState) return;
     const slot = slotFromClientY(e.currentTarget, e.clientY);
+    if (isRangeOccupied(dayIndex, slot, slot)) return;
     const date = weekDates[dayIndex];
     openNewBooking(date, slotToTime(slot), slotToTime(Math.min(slot + 2, TOTAL_SLOTS)));
   }
@@ -192,27 +207,32 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
 
       {/* Calendar grid */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Time gutter */}
-        <div className="w-14 shrink-0 bg-white border-r border-gray-200 pt-8 overflow-hidden">
-          {Array.from({ length: TOTAL_SLOTS }).map((_, i) => {
-            const minutes = (START_HOUR * 60) + i * SLOT_MINUTES;
-            if (minutes % 60 !== 0) return <div key={i} style={{ height: SLOT_HEIGHT }} />;
-            return (
-              <div key={i} style={{ height: SLOT_HEIGHT }} className="relative flex items-start justify-end pr-2">
-                <span className="text-xs text-gray-400 -mt-2">{String(minutes / 60).padStart(2, '0')}:00</span>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Day columns */}
         <div
           className="flex flex-1 overflow-y-auto overflow-x-hidden select-none"
           onMouseMove={handleOuterMouseMove}
           onMouseLeave={() => { setDragState(null); setHoverState(null); }}
         >
-          {weekDates.map((date, dayIndex) => {
-            const dayBookings = roomBookings.filter(b => b.date === date);
+          {/* Time gutter — inside scroll container so labels move with grid lines */}
+          <div className="w-14 shrink-0 bg-white border-r border-gray-400 min-h-full">
+            <div className="sticky top-0 h-11 bg-white border-b border-gray-100 z-20" />
+            {Array.from({ length: TOTAL_SLOTS }).map((_, i) => {
+              const minutes = (START_HOUR * 60) + i * SLOT_MINUTES;
+              if (minutes % 60 !== 0) return <div key={i} style={{ height: SLOT_HEIGHT }} />;
+              return (
+                <div key={i} style={{ height: SLOT_HEIGHT }} className="relative flex items-start justify-end pr-2">
+                  <span className="text-xs text-gray-400">{String(minutes / 60).padStart(2, '0')}:00</span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Day columns */}
+          <div className="flex flex-1">
+            {weekDates.map((date, dayIndex) => {
+            const dayBookings = roomBookings.filter(b => {
+              const effectiveDate = b.status === 'counter_proposed' && b.counter_date ? b.counter_date : b.date;
+              return effectiveDate === date;
+            });
             const isDraggingHere = dragState?.active && dragState.dayIndex === dayIndex;
 
             const isHoveringHere = !dragState?.active && hoverState?.dayIndex === dayIndex;
@@ -223,13 +243,15 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
             const showHoverPreview = isHoveringHere && !hoverOccupied;
             const previewEnd = Math.min(hoverSlot + 2, TOTAL_SLOTS);
 
+            const notLast = dayIndex < weekDates.length - 1;
+
             return (
               <div
                 key={date}
-                className={`flex-1 min-w-0 border-r border-gray-100 last:border-r-0 relative ${isToday(date) ? 'bg-blue-50/40' : ''}`}
+                className={`flex-1 min-w-0 relative ${isToday(date) ? 'bg-blue-50/40' : ''}`}
               >
                 {/* Day header */}
-                <div className={`sticky top-0 z-10 text-center py-1 border-b border-gray-100 ${isToday(date) ? 'bg-blue-100/60' : 'bg-white'}`}>
+                <div className={`sticky top-0 z-10 h-11 text-center py-1 border-b border-gray-100 ${notLast ? 'border-r border-gray-400' : ''} ${isToday(date) ? 'bg-blue-100/60' : 'bg-white'}`}>
                   <p className={`text-xs font-medium ${isToday(date) ? 'text-blue-700' : 'text-gray-500'}`}>
                     {DAYS_SHORT[dayIndex]}
                   </p>
@@ -241,7 +263,7 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
                 {/* Slot grid — ref stored for accurate Y-to-slot conversion */}
                 <div
                   ref={el => { slotGridRefs.current[dayIndex] = el; }}
-                  className="relative"
+                  className={`relative ${notLast ? 'border-r border-gray-400' : ''}`}
                   style={{ height: TOTAL_SLOTS * SLOT_HEIGHT }}
                   onMouseDown={e => handleMouseDown(dayIndex, e)}
                   onMouseUp={() => handleMouseUp(dayIndex)}
@@ -253,7 +275,7 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
                   {Array.from({ length: TOTAL_SLOTS }).map((_, i) => (
                     <div
                       key={i}
-                      className={`absolute left-0 right-0 border-t ${i % 2 === 0 ? 'border-gray-200' : 'border-gray-100'}`}
+                      className={`absolute left-0 right-0 border-t ${i % 2 === 0 ? 'border-gray-300' : 'border-gray-200'}`}
                       style={{ top: i * SLOT_HEIGHT }}
                     />
                   ))}
@@ -313,10 +335,12 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
                   )}
 
                   {/* Booking slots */}
-                  {dayBookings.map(booking => (
+                  {layoutBookings(dayBookings).map(({ booking, col, totalCols }) => (
                     <BookingSlot
                       key={booking.id}
                       booking={booking}
+                      col={col}
+                      totalCols={totalCols}
                       userId={user.id}
                       isAdminView={isAdmin(user.role)}
                       onTooltip={setTooltip}
@@ -326,6 +350,7 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
               </div>
             );
           })}
+          </div>
         </div>
       </div>
 
@@ -345,25 +370,34 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
 
 function BookingSlot({
   booking,
+  col,
+  totalCols,
   userId,
   isAdminView,
   onTooltip,
 }: {
   booking: Booking;
+  col: number;
+  totalCols: number;
   userId: number;
   isAdminView: boolean;
   onTooltip: (v: { booking: Booking; x: number; y: number } | null) => void;
 }) {
   const navigate = useNavigate();
   const isOwn = booking.requester_id === userId;
-  const top = timeToSlot(booking.start_time) * SLOT_HEIGHT;
+  const isCounter = booking.status === 'counter_proposed';
+  const effectiveStart = isCounter && booking.counter_start_time ? booking.counter_start_time : booking.start_time;
+  const effectiveEnd = isCounter && booking.counter_end_time ? booking.counter_end_time : booking.end_time;
+  const top = timeToSlot(effectiveStart) * SLOT_HEIGHT;
   const height = Math.max(
     SLOT_HEIGHT,
-    (timeToSlot(booking.end_time) - timeToSlot(booking.start_time)) * SLOT_HEIGHT
+    (timeToSlot(effectiveEnd) - timeToSlot(effectiveStart)) * SLOT_HEIGHT
   );
+  const leftPct = (col / totalCols) * 100;
+  const widthPct = 100 / totalCols;
 
-  const colorClass = getSlotColor(booking.status, isOwn);
-  const label = getSlotLabel(booking.status, isOwn);
+  const colorClass = getSlotColor(booking.status, isOwn, booking.requester_role, isAdminView);
+  const label = getSlotLabel(booking.status, isOwn, booking.requester_role, isAdminView);
   const isBooked = booking.status === 'approved';
 
   function handleClick(e: React.MouseEvent) {
@@ -377,24 +411,32 @@ function BookingSlot({
 
   return (
     <div
-      className={`absolute left-0.5 right-0.5 rounded overflow-hidden text-xs px-1.5 py-1 z-10 ${colorClass} ${
+      className={`absolute rounded overflow-hidden text-xs px-1.5 py-1 z-10 ${colorClass} ${
         isBooked && !isOwn && !isAdminView ? 'cursor-not-allowed' : 'cursor-pointer hover:brightness-95'
-      }`}
-      style={{ top, height }}
+      } ${isAdminView && booking.requester_role === 'zarzad' && booking.status === 'pending' ? 'slot-blink' : ''}`}
+      style={{ top, height, left: `calc(${leftPct}% + 2px)`, width: `calc(${widthPct}% - 4px)` }}
       onClick={handleClick}
       title={isBooked && !isOwn ? booking.title ?? 'Zarezerwowano' : undefined}
     >
-      <p className="font-semibold leading-tight truncate">{label}</p>
-      <p className="opacity-80 truncate">{booking.start_time}–{booking.end_time}</p>
-      {booking.title && (
-        <p className="opacity-70 truncate">{booking.title}</p>
+      <p className="font-semibold leading-tight truncate">{booking.title ?? label}</p>
+      <p className="opacity-80 truncate">{effectiveStart}–{effectiveEnd}</p>
+      {isAdminView && booking.requester_role === 'zarzad' && (
+        <span className="absolute top-0.5 right-1 text-[9px] bg-purple-100 text-purple-700 border border-purple-300 px-1 py-0.5 rounded-full leading-none">Zarząd</span>
       )}
+      <p className="absolute bottom-1 right-1.5 opacity-60 text-[10px] leading-none">{label}</p>
     </div>
   );
 }
 
-function getSlotColor(status: Booking['status'], isOwn: boolean): string {
+function getSlotColor(status: Booking['status'], isOwn: boolean, requesterRole?: string, isAdminView?: boolean): string {
+  if (isAdminView && requesterRole === 'zarzad') {
+    if (status === 'approved') return 'bg-purple-100 text-purple-900 border border-purple-400';
+    if (status === 'pending') return 'bg-amber-200 text-amber-900 border border-amber-400';
+    if (status === 'counter_proposed') return 'bg-orange-200 text-orange-900 border border-orange-400';
+    return 'bg-gray-200 text-gray-600 border border-gray-400';
+  }
   if (status === 'approved') {
+    if (isAdminView) return 'bg-sky-100 text-sky-900 border border-sky-300';
     return isOwn ? 'bg-sky-200 text-sky-900 border border-sky-400' : 'bg-gray-200 text-gray-600 border border-gray-400';
   }
   if (status === 'pending') return 'bg-amber-200 text-amber-900 border border-amber-400';
@@ -402,8 +444,11 @@ function getSlotColor(status: Booking['status'], isOwn: boolean): string {
   return 'bg-gray-200 text-gray-600 border border-gray-400';
 }
 
-function getSlotLabel(status: Booking['status'], isOwn: boolean): string {
-  if (status === 'approved') return isOwn ? 'Moja rezerwacja' : 'Zajęte';
+function getSlotLabel(status: Booking['status'], isOwn: boolean, requesterRole?: string, isAdminView?: boolean): string {
+  if (status === 'approved') {
+    if (isAdminView && requesterRole === 'pracownik') return 'Biuro';
+    return isOwn ? 'Moja rezerwacja' : 'Zajęte';
+  }
   if (status === 'pending') return 'Oczekuje';
   if (status === 'counter_proposed') return 'Kontrpropozycja';
   return 'Odrzucono';
@@ -474,4 +519,24 @@ function formatWeekRange(weekStart: string): string {
   const startStr = start.toLocaleDateString('pl-PL', opts);
   const endStr = end.toLocaleDateString('pl-PL', { ...opts, year: 'numeric' });
   return `${startStr} – ${endStr}`;
+}
+
+function layoutBookings(bookings: Booking[]): { booking: Booking; col: number; totalCols: number }[] {
+  if (bookings.length === 0) return [];
+  const sorted = [...bookings].sort((a, b) =>
+    a.start_time.localeCompare(b.start_time) || a.end_time.localeCompare(b.end_time)
+  );
+  const colEnds: string[] = [];
+  const assignments = sorted.map(booking => {
+    let col = colEnds.findIndex(end => end <= booking.start_time);
+    if (col === -1) { col = colEnds.length; colEnds.push(booking.end_time); }
+    else colEnds[col] = booking.end_time;
+    return { booking, col };
+  });
+  return assignments.map(item => ({
+    ...item,
+    totalCols: assignments
+      .filter(o => o.booking.start_time < item.booking.end_time && o.booking.end_time > item.booking.start_time)
+      .reduce((max, o) => Math.max(max, o.col + 1), 1),
+  }));
 }
