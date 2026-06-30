@@ -126,15 +126,12 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
     const lo = Math.min(startSlot, endSlot);
     const hi = Math.max(startSlot, endSlot);
     if (isRangeOccupied(dayIndex, lo, hi)) return;
-    openNewBooking(weekDates[dayIndex], slotToTime(lo), slotToTime(hi + 1));
-  }
-
-  function handleDayClick(dayIndex: number, e: React.MouseEvent<HTMLDivElement>) {
-    if (dragState) return;
-    const slot = slotFromClientY(e.currentTarget, e.clientY);
-    if (isRangeOccupied(dayIndex, slot, slot)) return;
-    const date = weekDates[dayIndex];
-    openNewBooking(date, slotToTime(slot), slotToTime(Math.min(slot + 2, TOTAL_SLOTS)));
+    if (lo === hi) {
+      // single click — open with 1-hour default
+      openNewBooking(weekDates[dayIndex], slotToTime(lo), slotToTime(Math.min(lo + 2, TOTAL_SLOTS)));
+    } else {
+      openNewBooking(weekDates[dayIndex], slotToTime(lo), slotToTime(hi + 1));
+    }
   }
 
   // ── Hover preview ────────────────────────────────────────────────────────────
@@ -269,7 +266,6 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
                   onMouseUp={() => handleMouseUp(dayIndex)}
                   onMouseMove={e => handleColumnMouseMove(dayIndex, e)}
                   onMouseLeave={() => setHoverState(null)}
-                  onClick={e => handleDayClick(dayIndex, e)}
                 >
                   {/* Grid lines */}
                   {Array.from({ length: TOTAL_SLOTS }).map((_, i) => (
