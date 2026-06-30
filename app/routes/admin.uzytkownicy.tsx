@@ -6,7 +6,7 @@ import { queryAll, queryOne, execute } from "~/lib/db.server";
 import { logAction } from "~/lib/audit.server";
 import { canManageUsers, assignableRoles, ROLE_LABELS } from "~/types";
 import type { User } from "~/types";
-import { Plus, ToggleLeft, ToggleRight, Trash2, Copy, Check, X, KeyRound, Pencil, Shield } from "lucide-react";
+import { Plus, ToggleLeft, ToggleRight, Trash2, Copy, Check, X, KeyRound, Pencil, Shield, Search } from "lucide-react";
 import { ConfirmModal } from "~/components/ConfirmModal";
 
 function tempPasswordFromName(name: string): string {
@@ -195,6 +195,21 @@ export default function AdminUzytkownicy({ loaderData, actionData }: Route.Compo
   const [newPermAssignPracownik, setNewPermAssignPracownik] = useState(true);
   const [newPermManageRooms, setNewPermManageRooms] = useState(false);
 
+  const [filterSearch, setFilterSearch] = useState('');
+  const [filterRole, setFilterRole] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+
+  const filteredUsers = users.filter(u => {
+    if (filterSearch) {
+      const q = filterSearch.toLowerCase();
+      if (!u.name.toLowerCase().includes(q) && !u.email.toLowerCase().includes(q)) return false;
+    }
+    if (filterRole && u.role !== filterRole) return false;
+    if (filterStatus === 'active' && !u.is_active) return false;
+    if (filterStatus === 'inactive' && u.is_active) return false;
+    return true;
+  });
+
   function handleNewEmailChange(e: React.ChangeEvent<HTMLInputElement>) {
     const val = e.target.value;
     setNewEmail(val);
@@ -369,6 +384,47 @@ export default function AdminUzytkownicy({ loaderData, actionData }: Route.Compo
 
       {/* Users table */}
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+        <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-gray-200 bg-gray-50">
+          <div className="relative flex-1 min-w-48">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Szukaj po nazwie lub e-mailu…"
+              value={filterSearch}
+              onChange={e => setFilterSearch(e.target.value)}
+              className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
+            />
+          </div>
+          <select
+            value={filterRole}
+            onChange={e => setFilterRole(e.target.value)}
+            className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
+          >
+            <option value="">Wszystkie role</option>
+            {Object.entries(ROLE_LABELS).map(([role, label]) => (
+              <option key={role} value={role}>{label}</option>
+            ))}
+          </select>
+          <select
+            value={filterStatus}
+            onChange={e => setFilterStatus(e.target.value)}
+            className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
+          >
+            <option value="">Wszyscy</option>
+            <option value="active">Aktywni</option>
+            <option value="inactive">Nieaktywni</option>
+          </select>
+          {(filterSearch || filterRole || filterStatus) && (
+            <button
+              type="button"
+              onClick={() => { setFilterSearch(''); setFilterRole(''); setFilterStatus(''); }}
+              className="text-xs text-gray-500 hover:text-gray-800 flex items-center gap-1"
+            >
+              <X size={12} /> Wyczyść
+            </button>
+          )}
+          <span className="ml-auto text-xs text-gray-400">{filteredUsers.length} z {users.length}</span>
+        </div>
         <div className="flex items-center gap-4 px-4 py-2 border-b border-gray-100 bg-gray-50 text-xs text-gray-400">
           <span className="flex items-center gap-1"><Pencil size={12} /> Edytuj</span>
           <span className="flex items-center gap-1"><Shield size={12} /> Uprawnienia</span>
@@ -388,7 +444,11 @@ export default function AdminUzytkownicy({ loaderData, actionData }: Route.Compo
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {users.map(u => (
+            {filteredUsers.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-400">Brak użytkowników spełniających kryteria filtrowania.</td>
+              </tr>
+            ) : filteredUsers.map(u => (
               <UserRow key={u.id} u={u} currentUser={currentUser} allowedRoles={allowedRoles} pending={pending} onRequestConfirm={setConfirm} />
             ))}
           </tbody>
