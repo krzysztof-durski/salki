@@ -153,6 +153,8 @@ Administrator może tworzyć i zarządzać kontami, **z wyjątkami zależnymi od
 2. Wypełnij imię i nazwisko, e-mail, hasło tymczasowe, rolę.
 3. Kliknij **Utwórz**.
 
+> **Ważne:** Po utworzeniu konta skopiuj dane logowania tymczasowe (e-mail i hasło) i przekaż je użytkownikowi w bezpieczny sposób. Jeśli baner z tymi danymi został już zamknięty, nadal można użyć przycisku ponownego skopiowania wiadomości, który pozwala otworzyć te informacje ponownie.
+
 Użytkownik przy pierwszym logowaniu zostanie poproszony o zmianę hasła.
 
 ### Edycja użytkownika
