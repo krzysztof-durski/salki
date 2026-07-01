@@ -201,6 +201,9 @@ export default function AppShell({ loaderData }: Route.ComponentProps) {
               Wyloguj się
             </button>
           </Form>
+          <Link to="/regulamin" className="block px-3 pt-2 text-xs text-gray-400 hover:text-gray-600 hover:underline">
+            Regulamin
+          </Link>
         </div>
       </aside>
 
@@ -253,6 +256,9 @@ export default function AppShell({ loaderData }: Route.ComponentProps) {
                   Wyloguj się
                 </button>
               </Form>
+              <Link to="/regulamin" onClick={() => setMobileOpen(false)} className="block px-3 pt-2 text-xs text-gray-400 hover:text-gray-600 hover:underline">
+                Regulamin
+              </Link>
             </div>
           </aside>
         </div>

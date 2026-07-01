@@ -1,4 +1,4 @@
-import { data, redirect, Form, useActionData, useNavigation } from "react-router";
+import { data, redirect, Form, Link, useActionData, useNavigation } from "react-router";
 import type { Route } from "./+types/login";
 import { getTokenFromRequest, getSessionUser, verifyPassword, createSession, setSessionCookie } from "~/lib/auth.server";
 import { queryOne } from "~/lib/db.server";
@@ -99,6 +99,9 @@ export default function Login({ actionData }: Route.ComponentProps) {
       </div>
 
       <p className="mt-6 text-xs text-gray-400">System wewnętrzny — dostęp tylko dla pracowników Lafrentz</p>
+      <Link to="/regulamin" className="mt-1 text-xs text-gray-400 hover:text-gray-600 hover:underline">
+        Regulamin
+      </Link>
     </div>
   );
 }

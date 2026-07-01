@@ -1,4 +1,4 @@
-import { redirect, data, Form, useNavigation, useSearchParams } from "react-router";
+import { redirect, data, Form, Link, useNavigation, useSearchParams } from "react-router";
 import type { Route } from "./+types/ustawienia";
 import { getTokenFromRequest, getSessionUser, requireUser, hashPassword, verifyPassword } from "~/lib/auth.server";
 import { queryAll, execute } from "~/lib/db.server";
@@ -135,6 +135,16 @@ export default function Ustawienia({ loaderData, actionData }: Route.ComponentPr
               Zapisz
             </button>
           </Form>
+        </div>
+      )}
+
+      {!forcePasswordChange && (
+        <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+          <h2 className="font-semibold text-gray-900 mb-2">Regulamin</h2>
+          <p className="text-sm text-gray-500 mb-3">Zasady korzystania z systemu rezerwacji sal.</p>
+          <Link to="/regulamin" className="text-sm text-blue-600 hover:underline font-medium">
+            Przejdź do regulaminu →
+          </Link>
         </div>
       )}
 

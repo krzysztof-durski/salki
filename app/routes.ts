@@ -18,6 +18,7 @@ export default [
     route("rezerwacje/:id/zmiana",         "routes/rezerwacje.$id.zmiana.tsx"),
     route("ustawienia",                    "routes/ustawienia.tsx"),
     route("powiadomienia",                 "routes/powiadomienia.tsx"),
+    route("regulamin",                     "routes/regulamin.tsx"),
 
     // Admin routes (admin + super_admin)
     ...prefix("admin", [

@@ -50,6 +50,9 @@ type Pages = {
   "/powiadomienia": {
     params: {};
   };
+  "/regulamin": {
+    params: {};
+  };
   "/admin/dzisiaj": {
     params: {};
   };
@@ -73,7 +76,7 @@ type Pages = {
 type RouteFiles = {
   "root.tsx": {
     id: "root";
-    page: "/" | "/login" | "/logout" | "/api/pending-count" | "/api/notifications" | "/rezerwacje/nowa" | "/rezerwacje/:id" | "/rezerwacje/:id/edytuj" | "/rezerwacje/:id/zmiana" | "/ustawienia" | "/powiadomienia" | "/admin/dzisiaj" | "/admin/rezerwacje" | "/admin/panel" | "/admin/uzytkownicy" | "/admin/sale" | "/admin/logi";
+    page: "/" | "/login" | "/logout" | "/api/pending-count" | "/api/notifications" | "/rezerwacje/nowa" | "/rezerwacje/:id" | "/rezerwacje/:id/edytuj" | "/rezerwacje/:id/zmiana" | "/ustawienia" | "/powiadomienia" | "/regulamin" | "/admin/dzisiaj" | "/admin/rezerwacje" | "/admin/panel" | "/admin/uzytkownicy" | "/admin/sale" | "/admin/logi";
   };
   "routes/login.tsx": {
     id: "routes/login";
@@ -93,7 +96,7 @@ type RouteFiles = {
   };
   "routes/_app.tsx": {
     id: "routes/_app";
-    page: "/" | "/rezerwacje/nowa" | "/rezerwacje/:id" | "/rezerwacje/:id/edytuj" | "/rezerwacje/:id/zmiana" | "/ustawienia" | "/powiadomienia" | "/admin/dzisiaj" | "/admin/rezerwacje" | "/admin/panel" | "/admin/uzytkownicy" | "/admin/sale" | "/admin/logi";
+    page: "/" | "/rezerwacje/nowa" | "/rezerwacje/:id" | "/rezerwacje/:id/edytuj" | "/rezerwacje/:id/zmiana" | "/ustawienia" | "/powiadomienia" | "/regulamin" | "/admin/dzisiaj" | "/admin/rezerwacje" | "/admin/panel" | "/admin/uzytkownicy" | "/admin/sale" | "/admin/logi";
   };
   "routes/dashboard.tsx": {
     id: "routes/dashboard";
@@ -122,6 +125,10 @@ type RouteFiles = {
   "routes/powiadomienia.tsx": {
     id: "routes/powiadomienia";
     page: "/powiadomienia";
+  };
+  "routes/regulamin.tsx": {
+    id: "routes/regulamin";
+    page: "/regulamin";
   };
   "routes/admin.dzisiaj.tsx": {
     id: "routes/admin.dzisiaj";
@@ -163,6 +170,7 @@ type RouteModules = {
   "routes/rezerwacje.$id.zmiana": typeof import("./app/routes/rezerwacje.$id.zmiana.tsx");
   "routes/ustawienia": typeof import("./app/routes/ustawienia.tsx");
   "routes/powiadomienia": typeof import("./app/routes/powiadomienia.tsx");
+  "routes/regulamin": typeof import("./app/routes/regulamin.tsx");
   "routes/admin.dzisiaj": typeof import("./app/routes/admin.dzisiaj.tsx");
   "routes/admin.rezerwacje": typeof import("./app/routes/admin.rezerwacje.tsx");
   "routes/admin.panel": typeof import("./app/routes/admin.panel.tsx");
