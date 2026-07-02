@@ -453,9 +453,9 @@ function BookingSlot({
         onClick={handleAddToCalendar}
         title="Dodaj do kalendarza"
         aria-label="Dodaj do kalendarza"
-        className="absolute bottom-0.5 right-0.5 z-20 p-0.5 rounded bg-white/80 hover:bg-white text-gray-600 hover:text-gray-900 shadow-sm leading-none"
+        className="absolute bottom-0.5 right-0.5 z-20 p-1 rounded bg-white/80 hover:bg-white text-gray-600 hover:text-gray-900 shadow-sm leading-none"
       >
-        <CalendarPlus size={11} />
+        <CalendarPlus size={15} />
       </button>
     </div>
   );
