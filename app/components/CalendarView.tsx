@@ -5,11 +5,13 @@ import type { Room, Booking, User } from "~/types";
 import { isAdmin } from "~/types";
 
 interface Props {
-  user: User;
+  user?: User;
   rooms: Room[];
   bookings: Booking[];
   activeRoomId: number;
   weekStart: string; // YYYY-MM-DD
+  readOnly?: boolean;
+  basePath?: string;
 }
 
 const START_HOUR = 7;
@@ -20,7 +22,7 @@ const SLOT_HEIGHT = 48; // px per 30-min slot
 
 const DAYS_SHORT = ['Pon', 'Wt', 'Śr', 'Czw', 'Pt'];
 
-export default function CalendarView({ user, rooms, bookings, activeRoomId, weekStart }: Props) {
+export default function CalendarView({ user, rooms, bookings, activeRoomId, weekStart, readOnly = false, basePath = "/" }: Props) {
   const navigate = useNavigate();
 
   // Refs to each day's slot grid div — used for accurate Y→slot conversion
@@ -62,14 +64,15 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
   function goToWeek(offset: number) {
     const d = new Date(weekStart);
     d.setDate(d.getDate() + offset * 7);
-    navigate(`/?week=${d.toISOString().split('T')[0]}&sala=${activeRoomId}`);
+    navigate(`${basePath}?week=${d.toISOString().split('T')[0]}&sala=${activeRoomId}`);
   }
 
   function switchRoom(roomId: number) {
-    navigate(`/?week=${weekStart}&sala=${roomId}`);
+    navigate(`${basePath}?week=${weekStart}&sala=${roomId}`);
   }
 
   function openNewBooking(date: string, startTime: string, endTime: string) {
+    if (readOnly) return;
     navigate(`/rezerwacje/nowa?sala=${activeRoomId}&data=${date}&od=${startTime}&do=${endTime}`);
   }
 
@@ -99,7 +102,7 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
   // ── Drag to select ───────────────────────────────────────────────────────────
 
   function handleMouseDown(dayIndex: number, e: React.MouseEvent<HTMLDivElement>) {
-    if (e.button !== 0) return;
+    if (readOnly || e.button !== 0) return;
     const slot = slotFromClientY(e.currentTarget, e.clientY);
     setHoverState(null);
     setDragState({ dayIndex, startSlot: slot, endSlot: slot, active: true });
@@ -109,7 +112,7 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
   // Outer div tracks drag y-position across the full width; looks up the
   // originating column's slot grid ref so the conversion stays accurate.
   function handleOuterMouseMove(e: React.MouseEvent<HTMLDivElement>) {
-    if (!dragState?.active) return;
+    if (readOnly || !dragState?.active) return;
     const slotGrid = slotGridRefs.current[dragState.dayIndex];
     if (!slotGrid) return;
     const slot = slotFromClientY(slotGrid, e.clientY);
@@ -117,6 +120,7 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
   }
 
   function handleMouseUp(dayIndex: number) {
+    if (readOnly) return;
     if (!dragState?.active || dragState.dayIndex !== dayIndex) {
       setDragState(null);
       return;
@@ -137,7 +141,7 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
   // ── Hover preview ────────────────────────────────────────────────────────────
 
   function handleColumnMouseMove(dayIndex: number, e: React.MouseEvent<HTMLDivElement>) {
-    if (dragState?.active) return;
+    if (readOnly || dragState?.active) return;
     const slot = slotFromClientY(e.currentTarget, e.clientY);
     setHoverState({ dayIndex, slot });
   }
@@ -159,7 +163,7 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
             }`}
           >
             {room.name}
-            {room.id === user.preferred_room_id && (
+            {room.id === user?.preferred_room_id && (
               <Star size={12} className="fill-yellow-400 text-yellow-400" />
             )}
             {room.category === 'board' && (
@@ -182,7 +186,7 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
             <ChevronRight size={18} />
           </button>
           <button
-            onClick={() => navigate(`/?sala=${activeRoomId}`)}
+            onClick={() => navigate(`${basePath}?sala=${activeRoomId}`)}
             className="ml-2 text-xs text-blue-600 hover:underline"
           >
             Dzisiaj
@@ -192,13 +196,15 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
           {activeRoom?.size_label && (
             <span className="text-xs text-gray-400">{activeRoom.size_label}</span>
           )}
-          <button
-            onClick={() => navigate(`/rezerwacje/nowa?sala=${activeRoomId}`)}
-            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
-          >
-            <Plus size={15} />
-            Utwórz rezerwację
-          </button>
+          {!readOnly && (
+            <button
+              onClick={() => navigate(`/rezerwacje/nowa?sala=${activeRoomId}`)}
+              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
+            >
+              <Plus size={15} />
+              Utwórz rezerwację
+            </button>
+          )}
         </div>
       </div>
 
@@ -337,8 +343,9 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
                       booking={booking}
                       col={col}
                       totalCols={totalCols}
-                      userId={user.id}
-                      isAdminView={isAdmin(user.role)}
+                      userId={user?.id ?? -1}
+                      isAdminView={user ? isAdmin(user.role) : false}
+                      readOnly={readOnly}
                       onTooltip={setTooltip}
                     />
                   ))}
@@ -354,7 +361,7 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
       {tooltip && (
         <BookingTooltip
           booking={tooltip.booking}
-          userId={user.id}
+          userId={user?.id ?? -1}
           onClose={() => setTooltip(null)}
         />
       )}
@@ -370,6 +377,7 @@ function BookingSlot({
   totalCols,
   userId,
   isAdminView,
+  readOnly,
   onTooltip,
 }: {
   booking: Booking;
@@ -377,6 +385,7 @@ function BookingSlot({
   totalCols: number;
   userId: number;
   isAdminView: boolean;
+  readOnly?: boolean;
   onTooltip: (v: { booking: Booking; x: number; y: number } | null) => void;
 }) {
   const navigate = useNavigate();
@@ -398,7 +407,7 @@ function BookingSlot({
 
   function handleClick(e: React.MouseEvent) {
     e.stopPropagation();
-    if (isBooked && !isOwn && !isAdminView) {
+    if (readOnly || (isBooked && !isOwn && !isAdminView)) {
       onTooltip({ booking, x: e.clientX, y: e.clientY });
       return;
     }
@@ -408,7 +417,7 @@ function BookingSlot({
   return (
     <div
       className={`absolute rounded overflow-hidden text-xs px-1.5 py-1 z-10 ${colorClass} ${
-        isBooked && !isOwn && !isAdminView ? 'cursor-not-allowed' : 'cursor-pointer hover:brightness-95'
+        readOnly || (isBooked && !isOwn && !isAdminView) ? 'cursor-not-allowed' : 'cursor-pointer hover:brightness-95'
       } ${isAdminView && booking.requester_role === 'zarzad' && booking.status === 'pending' ? 'slot-blink' : ''}`}
       style={{ top, height, left: `calc(${leftPct}% + 2px)`, width: `calc(${widthPct}% - 4px)` }}
       onClick={handleClick}
