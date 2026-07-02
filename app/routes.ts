@@ -5,6 +5,11 @@ export default [
   route("login",  "routes/login.tsx"),
   route("logout", "routes/logout.tsx"),
 
+  // Observer (shared-password, read-only, no shell)
+  route("obserwator",           "routes/obserwator.tsx"),
+  route("obserwator/kalendarz", "routes/obserwator.kalendarz.tsx"),
+  route("obserwator/wyjscie",   "routes/obserwator.wyjscie.tsx"),
+
   // API
   route("api/pending-count",  "routes/api.pending-count.ts"),
   route("api/notifications",  "routes/api.notifications.ts"),
@@ -28,6 +33,7 @@ export default [
       route("uzytkownicy",    "routes/admin.uzytkownicy.tsx"),
       route("sale",           "routes/admin.sale.tsx"),
       route("logi",           "routes/admin.logi.tsx"),
+      route("obserwator",     "routes/admin.obserwator.tsx"),
     ]),
   ]),
 ] satisfies RouteConfig;

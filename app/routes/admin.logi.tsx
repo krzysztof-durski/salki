@@ -57,6 +57,7 @@ const ACTION_LABELS: Record<string, string> = {
   'room.created': 'Dodano salę',
   'room.edited': 'Edytowano salę',
   'room.toggled': 'Zmieniono status sali',
+  'observer_settings.updated': 'Zaktualizowano ustawienia obserwatora',
 };
 
 const ENTITY_TYPE_LABELS: Record<string, string> = {
@@ -64,6 +65,7 @@ const ENTITY_TYPE_LABELS: Record<string, string> = {
   user: 'Użytkownik',
   room: 'Sala',
   change_request: 'Wniosek o zmianę',
+  observer_settings: 'Ustawienia obserwatora',
 };
 
 function entityLabel(log: AuditLogRow): string {

@@ -2,9 +2,9 @@ import { Outlet, Link, Form, useLocation, NavLink, redirect } from "react-router
 import type { Route } from "./+types/_app";
 import { getTokenFromRequest, getSessionUser, requireUser } from "~/lib/auth.server";
 import { queryOne } from "~/lib/db.server";
-import { canManageBookings, canManageUsers, canViewAuditLogs, canManageRooms } from "~/types";
+import { canManageBookings, canManageUsers, canViewAuditLogs, canManageRooms, canManageObserverSettings } from "~/types";
 import {
-  CalendarDays, Settings, LogOut, Users, DoorOpen, ScrollText, ClipboardList, Menu, X, Bell, CalendarRange, CalendarCheck
+  CalendarDays, Settings, LogOut, Users, DoorOpen, ScrollText, ClipboardList, Menu, X, Bell, CalendarRange, CalendarCheck, Eye
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 
@@ -139,6 +139,7 @@ export default function AppShell({ loaderData }: Route.ComponentProps) {
     ...(canManageUsers(user.role)    ? [{ to: "/admin/uzytkownicy", label: "Użytkownicy", icon: Users }] : []),
     ...(canManageRooms(user)         ? [{ to: "/admin/sale", label: "Sale", icon: DoorOpen }] : []),
     ...(canViewAuditLogs(user.role)  ? [{ to: "/admin/logi", label: "Logi", icon: ScrollText }] : []),
+    ...(canManageObserverSettings(user.role) ? [{ to: "/admin/obserwator", label: "Obserwator", icon: Eye }] : []),
     { to: "/powiadomienia", label: "Powiadomienia", icon: Bell },
     { to: "/ustawienia", label: "Ustawienia", icon: Settings },
   ];
