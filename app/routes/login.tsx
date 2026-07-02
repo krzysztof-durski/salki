@@ -3,13 +3,16 @@ import type { Route } from "./+types/login";
 import { getTokenFromRequest, getSessionUser, verifyPassword, createSession, setSessionCookie } from "~/lib/auth.server";
 import { queryOne } from "~/lib/db.server";
 import type { User } from "~/types";
+import { CalendarDays } from "lucide-react";
 
 export async function loader({ request, context }: Route.LoaderArgs) {
   const { env } = context.cloudflare;
   const token = getTokenFromRequest(request);
   const user = await getSessionUser(env.DB, token);
   if (user) return redirect("/");
-  return null;
+
+  const observerSettings = await queryOne<{ is_enabled: number }>(env.DB, "SELECT is_enabled FROM observer_settings WHERE id = 1");
+  return { observerEnabled: observerSettings?.is_enabled === 1 };
 }
 
 export async function action({ request, context }: Route.ActionArgs) {
@@ -37,7 +40,8 @@ export async function action({ request, context }: Route.ActionArgs) {
   return redirect("/", { headers });
 }
 
-export default function Login({ actionData }: Route.ComponentProps) {
+export default function Login({ loaderData, actionData }: Route.ComponentProps) {
+  const { observerEnabled } = loaderData;
   const nav = useNavigation();
   const pending = nav.state === "submitting";
 
@@ -97,6 +101,16 @@ export default function Login({ actionData }: Route.ComponentProps) {
           </p>
         </Form>
       </div>
+
+      {observerEnabled && (
+        <Link
+          to="/obserwator"
+          className="mt-6 w-full max-w-sm flex items-center justify-center gap-2 bg-white hover:bg-blue-50 border-2 border-blue-600 text-blue-700 font-semibold rounded-lg px-4 py-2.5 text-sm shadow-sm transition-colors"
+        >
+          <CalendarDays size={17} />
+          Podgląd kalendarzy
+        </Link>
+      )}
 
       <p className="mt-6 text-xs text-gray-400">System wewnętrzny — dostęp tylko dla pracowników Lafrentz</p>
       <Link to="/regulamin" className="mt-1 text-xs text-gray-400 hover:text-gray-600 hover:underline">
