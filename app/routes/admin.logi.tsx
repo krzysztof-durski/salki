@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "react-router";
 import type { Route } from "./+types/admin.logi";
 import { getTokenFromRequest, getSessionUser, requireUser } from "~/lib/auth.server";
@@ -65,9 +66,16 @@ const ENTITY_TYPE_LABELS: Record<string, string> = {
   change_request: 'Wniosek o zmianę',
 };
 
+function entityLabel(log: AuditLogRow): string {
+  const type = ENTITY_TYPE_LABELS[log.entity_type] ?? log.entity_type;
+  if (!log.entity_id) return type;
+  return `${type}: ${log.entity_name ?? `#${log.entity_id}`}`;
+}
+
 export default function AdminLogi({ loaderData }: Route.ComponentProps) {
   const { logs, page, total, limit } = loaderData;
   const totalPages = Math.ceil(total / limit);
+  const [selected, setSelected] = useState<AuditLogRow | null>(null);
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
@@ -86,7 +94,11 @@ export default function AdminLogi({ loaderData }: Route.ComponentProps) {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {logs.map(log => (
-              <tr key={log.id} className="hover:bg-gray-50">
+              <tr
+                key={log.id}
+                onClick={() => setSelected(log)}
+                className="hover:bg-gray-50 cursor-pointer"
+              >
                 <td className="px-4 py-3 text-gray-500 whitespace-nowrap text-xs">
                   {log.created_at.replace('T', ' ').slice(0, 16)}
                 </td>
@@ -98,7 +110,11 @@ export default function AdminLogi({ loaderData }: Route.ComponentProps) {
                       <span>{ENTITY_TYPE_LABELS[log.entity_type] ?? log.entity_type}</span>
                       {': '}
                       {log.entity_type === 'booking' ? (
-                        <Link to={`/rezerwacje/${log.entity_id}`} className="text-blue-600 hover:underline">
+                        <Link
+                          to={`/rezerwacje/${log.entity_id}`}
+                          onClick={e => e.stopPropagation()}
+                          className="text-blue-600 hover:underline"
+                        >
                           {log.entity_name ?? `#${log.entity_id}`}
                         </Link>
                       ) : (
@@ -129,6 +145,74 @@ export default function AdminLogi({ loaderData }: Route.ComponentProps) {
               Następna →
             </a>
           )}
+        </div>
+      )}
+
+      {selected && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={() => setSelected(null)}
+        >
+          <div
+            className="bg-white rounded-xl p-6 max-w-lg w-full mx-4 shadow-xl space-y-4"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between">
+              <h2 className="text-lg font-semibold text-gray-900">Szczegóły wpisu</h2>
+              <button
+                type="button"
+                onClick={() => setSelected(null)}
+                className="text-gray-400 hover:text-gray-600"
+                aria-label="Zamknij"
+              >
+                ✕
+              </button>
+            </div>
+
+            <dl className="text-sm divide-y divide-gray-100">
+              <div className="flex justify-between py-2">
+                <dt className="text-gray-500">Data</dt>
+                <dd className="text-gray-900">{selected.created_at.replace('T', ' ').slice(0, 19)}</dd>
+              </div>
+              <div className="flex justify-between py-2">
+                <dt className="text-gray-500">Użytkownik</dt>
+                <dd className="text-gray-900">{selected.user_name ?? '—'}</dd>
+              </div>
+              <div className="flex justify-between py-2">
+                <dt className="text-gray-500">Akcja</dt>
+                <dd className="text-gray-900">{ACTION_LABELS[selected.action] ?? selected.action}</dd>
+              </div>
+              <div className="flex justify-between py-2">
+                <dt className="text-gray-500">Obiekt</dt>
+                <dd className="text-gray-900">
+                  {selected.entity_type === 'booking' && selected.entity_id ? (
+                    <Link
+                      to={`/rezerwacje/${selected.entity_id}`}
+                      onClick={() => setSelected(null)}
+                      className="text-blue-600 hover:underline"
+                    >
+                      {entityLabel(selected)}
+                    </Link>
+                  ) : (
+                    entityLabel(selected)
+                  )}
+                </dd>
+              </div>
+              <div className="flex justify-between py-2">
+                <dt className="text-gray-500">Adres IP</dt>
+                <dd className="text-gray-900">{selected.ip_address ?? '—'}</dd>
+              </div>
+            </dl>
+
+            {selected.details && (
+              <div>
+                <p className="text-sm text-gray-500 mb-1">Dodatkowe dane</p>
+                <pre className="text-xs bg-gray-50 border border-gray-200 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-words">
+                  {JSON.stringify(JSON.parse(selected.details), null, 2)}
+                </pre>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
