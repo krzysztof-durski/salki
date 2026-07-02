@@ -373,6 +373,8 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
       {calendarMenu && (
         <AddToCalendarMenu
           booking={calendarMenu.booking}
+          x={calendarMenu.x}
+          y={calendarMenu.y}
           onClose={() => setCalendarMenu(null)}
         />
       )}
@@ -512,11 +514,18 @@ function BookingTooltip({
 
 // ─── Add-to-calendar menu ──────────────────────────────────────────────────────
 
+const CALENDAR_MENU_WIDTH = 176; // matches min-w-44
+const CALENDAR_MENU_HEIGHT = 84; // approx. two menu items
+
 function AddToCalendarMenu({
   booking,
+  x,
+  y,
   onClose,
 }: {
   booking: Booking;
+  x: number;
+  y: number;
   onClose: () => void;
 }) {
   const isCounter = booking.status === 'counter_proposed';
@@ -530,11 +539,14 @@ function AddToCalendarMenu({
     description: booking.requester_note,
   };
 
+  const left = Math.min(Math.max(8, x), window.innerWidth - CALENDAR_MENU_WIDTH - 8);
+  const top = Math.min(Math.max(8, y), window.innerHeight - CALENDAR_MENU_HEIGHT - 8);
+
   return (
     <div className="fixed inset-0 z-50" onClick={onClose}>
       <div
         className="absolute bg-white border border-gray-200 shadow-lg rounded-lg py-1 min-w-44 text-sm"
-        style={{ top: 100, left: '50%', transform: 'translateX(-50%)' }}
+        style={{ top, left }}
         onClick={e => e.stopPropagation()}
       >
         <a
