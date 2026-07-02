@@ -4,6 +4,9 @@ import type { User } from '~/types';
 const SESSION_COOKIE = 'session';
 const SESSION_DURATION_HOURS = 24 * 7;
 
+const OBSERVER_COOKIE = 'observer_session';
+const OBSERVER_SESSION_DURATION_HOURS = 24 * 7;
+
 // ─── Password ────────────────────────────────────────────────────────────────
 
 export async function hashPassword(password: string): Promise<string> {
@@ -69,6 +72,53 @@ export async function deleteSession(db: CloudflareEnv['DB'], token: string): Pro
 
 export async function purgeExpiredSessions(db: CloudflareEnv['DB']): Promise<void> {
   await execute(db, 'DELETE FROM sessions WHERE expires_at <= CURRENT_TIMESTAMP', []);
+}
+
+// ─── Observer session (shared-password, no user account) ─────────────────────
+
+export async function createObserverSession(db: CloudflareEnv['DB']): Promise<string> {
+  const id = generateToken(32);
+  const expiresAt = new Date(Date.now() + OBSERVER_SESSION_DURATION_HOURS * 3600 * 1000).toISOString();
+  await execute(db, 'INSERT INTO observer_sessions (id, expires_at) VALUES (?, ?)', [id, expiresAt]);
+  return id;
+}
+
+export async function getObserverSession(db: CloudflareEnv['DB'], token: string): Promise<boolean> {
+  if (!token) return false;
+  const row = await queryOne(
+    db,
+    'SELECT 1 FROM observer_sessions WHERE id = ? AND expires_at > CURRENT_TIMESTAMP',
+    [token]
+  );
+  return row !== null;
+}
+
+export async function deleteObserverSession(db: CloudflareEnv['DB'], token: string): Promise<void> {
+  await execute(db, 'DELETE FROM observer_sessions WHERE id = ?', [token]);
+}
+
+export function getObserverTokenFromRequest(request: Request): string {
+  const cookie = request.headers.get('Cookie') ?? '';
+  for (const part of cookie.split(';')) {
+    const [k, v] = part.trim().split('=');
+    if (k === OBSERVER_COOKIE) return v ?? '';
+  }
+  return '';
+}
+
+export function setObserverSessionCookie(token: string, request?: Request): string {
+  const maxAge = OBSERVER_SESSION_DURATION_HOURS * 3600;
+  const secure = !request || new URL(request.url).protocol === 'https:';
+  return `${OBSERVER_COOKIE}=${token}; Max-Age=${maxAge}; Path=/; HttpOnly${secure ? '; Secure' : ''}; SameSite=Strict`;
+}
+
+export function clearObserverSessionCookie(request?: Request): string {
+  const secure = !request || new URL(request.url).protocol === 'https:';
+  return `${OBSERVER_COOKIE}=; Max-Age=0; Path=/; HttpOnly${secure ? '; Secure' : ''}; SameSite=Strict`;
+}
+
+export function requireObserverSession(isValid: boolean): void {
+  if (!isValid) throw new Response(null, { status: 302, headers: { Location: '/obserwator' } });
 }
 
 // ─── Cookie helpers ───────────────────────────────────────────────────────────

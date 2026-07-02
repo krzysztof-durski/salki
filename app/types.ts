@@ -128,6 +128,10 @@ export function canViewAuditLogs(role: Role): boolean {
   return role === 'super_admin';
 }
 
+export function canManageObserverSettings(role: Role): boolean {
+  return role === 'super_admin';
+}
+
 export function isAdmin(role: Role): boolean {
   return role === 'super_admin' || role === 'admin';
 }
