@@ -7,6 +7,7 @@ import { queryOne, queryAll, execute } from "~/lib/db.server";
 import { logAction } from "~/lib/audit.server";
 import { isAdmin, canManageBookings } from "~/types";
 import type { Booking, BookingChangeRequest, User } from "~/types";
+import { buildGoogleCalendarUrl, downloadIcs } from "~/lib/calendar-export";
 import { CheckCircle, XCircle, Clock, Edit2, RefreshCw, Trash2, Calendar } from "lucide-react";
 
 export async function loader({ params, request, context }: Route.LoaderArgs) {
@@ -556,52 +557,15 @@ function AdminActions({ bookingId, bookingVersion, pending, actionData, bookingD
 function AddToCalendar({ booking }: { booking: Booking & { room_name?: string } }) {
   const [open, setOpen] = useState(false);
 
-  const title = booking.title ?? 'Rezerwacja sali';
-  const location = booking.room_name ?? '';
-  const description = booking.requester_note ?? '';
-
-  const dateStr = booking.date.replace(/-/g, '');
-  const startStr = booking.start_time.replace(':', '') + '00';
-  const endStr = booking.end_time.replace(':', '') + '00';
-  const dtStart = `${dateStr}T${startStr}`;
-  const dtEnd = `${dateStr}T${endStr}`;
-
-  function escapeIcs(s: string) {
-    return s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
-  }
-
-  function downloadIcs() {
-    const lines = [
-      'BEGIN:VCALENDAR',
-      'VERSION:2.0',
-      'PRODID:-//Salki//Rezerwacje//PL',
-      'BEGIN:VEVENT',
-      `DTSTART:${dtStart}`,
-      `DTEND:${dtEnd}`,
-      `SUMMARY:${escapeIcs(title)}`,
-      `LOCATION:${escapeIcs(location)}`,
-      description ? `DESCRIPTION:${escapeIcs(description)}` : null,
-      `UID:booking-${booking.id}@salki`,
-      'END:VEVENT',
-      'END:VCALENDAR',
-    ].filter(Boolean).join('\r\n');
-
-    const blob = new Blob([lines], { type: 'text/calendar' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `rezerwacja-${booking.id}.ics`;
-    a.click();
-    URL.revokeObjectURL(url);
-    setOpen(false);
-  }
-
-  const gcUrl = new URL('https://calendar.google.com/calendar/render');
-  gcUrl.searchParams.set('action', 'TEMPLATE');
-  gcUrl.searchParams.set('text', title);
-  gcUrl.searchParams.set('dates', `${dtStart}/${dtEnd}`);
-  gcUrl.searchParams.set('location', location);
-  if (description) gcUrl.searchParams.set('details', description);
+  const event = {
+    id: booking.id,
+    title: booking.title,
+    date: booking.date,
+    startTime: booking.start_time,
+    endTime: booking.end_time,
+    location: booking.room_name,
+    description: booking.requester_note,
+  };
 
   return (
     <div className="relative inline-block">
@@ -617,7 +581,7 @@ function AddToCalendar({ booking }: { booking: Booking & { room_name?: string } 
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
           <div className="absolute left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-20 min-w-44">
             <a
-              href={gcUrl.toString()}
+              href={buildGoogleCalendarUrl(event)}
               target="_blank"
               rel="noopener noreferrer"
               className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
@@ -627,7 +591,7 @@ function AddToCalendar({ booking }: { booking: Booking & { room_name?: string } 
             </a>
             <button
               type="button"
-              onClick={downloadIcs}
+              onClick={() => { downloadIcs(event); setOpen(false); }}
               className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
             >
               Apple / Outlook (.ics)

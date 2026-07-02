@@ -3,6 +3,7 @@ import { useRef, useState, useEffect } from "react";
 import { ChevronLeft, ChevronRight, Star, Plus, CalendarPlus } from "lucide-react";
 import type { Room, Booking, User } from "~/types";
 import { isAdmin } from "~/types";
+import { buildGoogleCalendarUrl, downloadIcs } from "~/lib/calendar-export";
 
 interface Props {
   user?: User;
@@ -42,6 +43,7 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
   } | null>(null);
 
   const [tooltip, setTooltip] = useState<{ booking: Booking; x: number; y: number } | null>(null);
+  const [calendarMenu, setCalendarMenu] = useState<{ booking: Booking; x: number; y: number } | null>(null);
 
   const [nowMinutes, setNowMinutes] = useState(() => {
     const d = new Date();
@@ -346,7 +348,8 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
                       userId={user?.id ?? -1}
                       isAdminView={user ? isAdmin(user.role) : false}
                       readOnly={readOnly}
-                      onTooltip={setTooltip}
+                      onTooltip={v => { setCalendarMenu(null); setTooltip(v); }}
+                      onCalendarMenu={v => { setTooltip(null); setCalendarMenu(v); }}
                     />
                   ))}
                 </div>
@@ -365,6 +368,14 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
           onClose={() => setTooltip(null)}
         />
       )}
+
+      {/* Add-to-calendar menu */}
+      {calendarMenu && (
+        <AddToCalendarMenu
+          booking={calendarMenu.booking}
+          onClose={() => setCalendarMenu(null)}
+        />
+      )}
     </div>
   );
 }
@@ -379,6 +390,7 @@ function BookingSlot({
   isAdminView,
   readOnly,
   onTooltip,
+  onCalendarMenu,
 }: {
   booking: Booking;
   col: number;
@@ -387,11 +399,11 @@ function BookingSlot({
   isAdminView: boolean;
   readOnly?: boolean;
   onTooltip: (v: { booking: Booking; x: number; y: number } | null) => void;
+  onCalendarMenu: (v: { booking: Booking; x: number; y: number } | null) => void;
 }) {
   const navigate = useNavigate();
   const isOwn = booking.requester_id === userId;
   const isCounter = booking.status === 'counter_proposed';
-  const effectiveDate = isCounter && booking.counter_date ? booking.counter_date : booking.date;
   const effectiveStart = isCounter && booking.counter_start_time ? booking.counter_start_time : booking.start_time;
   const effectiveEnd = isCounter && booking.counter_end_time ? booking.counter_end_time : booking.end_time;
   const top = timeToSlot(effectiveStart) * SLOT_HEIGHT;
@@ -417,7 +429,7 @@ function BookingSlot({
 
   function handleAddToCalendar(e: React.MouseEvent) {
     e.stopPropagation();
-    downloadIcs(booking, effectiveDate, effectiveStart, effectiveEnd);
+    onCalendarMenu({ booking, x: e.clientX, y: e.clientY });
   }
 
   return (
@@ -429,53 +441,22 @@ function BookingSlot({
       onClick={handleClick}
       title={isBooked && !isOwn ? booking.title ?? 'Zarezerwowano' : undefined}
     >
-      <button
-        onClick={handleAddToCalendar}
-        title="Dodaj do kalendarza"
-        aria-label="Dodaj do kalendarza"
-        className="absolute top-0.5 left-0.5 z-20 p-0.5 rounded bg-white/80 hover:bg-white text-gray-600 hover:text-gray-900 shadow-sm leading-none"
-      >
-        <CalendarPlus size={11} />
-      </button>
       <p className="font-semibold leading-tight truncate">{booking.title ?? label}</p>
       <p className="opacity-80 truncate">{effectiveStart}–{effectiveEnd}</p>
       {isAdminView && booking.requester_role === 'zarzad' && (
         <span className="absolute top-0.5 right-1 text-[9px] bg-purple-100 text-purple-700 border border-purple-300 px-1 py-0.5 rounded-full leading-none">Zarząd</span>
       )}
-      <p className="absolute bottom-1 right-1.5 opacity-60 text-[10px] leading-none">{label}</p>
+      <p className="absolute bottom-1 left-1.5 opacity-60 text-[10px] leading-none">{label}</p>
+      <button
+        onClick={handleAddToCalendar}
+        title="Dodaj do kalendarza"
+        aria-label="Dodaj do kalendarza"
+        className="absolute bottom-0.5 right-0.5 z-20 p-0.5 rounded bg-white/80 hover:bg-white text-gray-600 hover:text-gray-900 shadow-sm leading-none"
+      >
+        <CalendarPlus size={11} />
+      </button>
     </div>
   );
-}
-
-function downloadIcs(booking: Booking, date: string, startTime: string, endTime: string) {
-  const toIcsDateTime = (d: string, t: string) => `${d.replace(/-/g, '')}T${t.replace(':', '')}00`;
-  const dtStamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-  const summary = (booking.title ?? 'Rezerwacja sali').replace(/\r?\n/g, ' ');
-
-  const lines = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//Lafrentz//Rezerwacja Sal//PL',
-    'BEGIN:VEVENT',
-    `UID:booking-${booking.id}-${dtStamp}@salki.lafrentz.pl`,
-    `DTSTAMP:${dtStamp}`,
-    `DTSTART:${toIcsDateTime(date, startTime)}`,
-    `DTEND:${toIcsDateTime(date, endTime)}`,
-    `SUMMARY:${summary}`,
-    ...(booking.room_name ? [`LOCATION:${booking.room_name}`] : []),
-    'END:VEVENT',
-    'END:VCALENDAR',
-  ];
-
-  const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `rezerwacja-${booking.id}.ics`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
 function getSlotColor(status: Booking['status'], isOwn: boolean, requesterRole?: string, isAdminView?: boolean): string {
@@ -524,6 +505,54 @@ function BookingTooltip({
         <p className="font-semibold text-gray-900">{booking.title ?? 'Zarezerwowano'}</p>
         <p className="text-gray-500 text-xs mt-1">{booking.date}, {booking.start_time}–{booking.end_time}</p>
         <button onClick={onClose} className="mt-2 text-xs text-gray-400 hover:text-gray-600">Zamknij</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Add-to-calendar menu ──────────────────────────────────────────────────────
+
+function AddToCalendarMenu({
+  booking,
+  onClose,
+}: {
+  booking: Booking;
+  onClose: () => void;
+}) {
+  const isCounter = booking.status === 'counter_proposed';
+  const event = {
+    id: booking.id,
+    title: booking.title,
+    date: isCounter && booking.counter_date ? booking.counter_date : booking.date,
+    startTime: isCounter && booking.counter_start_time ? booking.counter_start_time : booking.start_time,
+    endTime: isCounter && booking.counter_end_time ? booking.counter_end_time : booking.end_time,
+    location: booking.room_name,
+    description: booking.requester_note,
+  };
+
+  return (
+    <div className="fixed inset-0 z-50" onClick={onClose}>
+      <div
+        className="absolute bg-white border border-gray-200 shadow-lg rounded-lg py-1 min-w-44 text-sm"
+        style={{ top: 100, left: '50%', transform: 'translateX(-50%)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <a
+          href={buildGoogleCalendarUrl(event)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block px-4 py-2 text-gray-700 hover:bg-gray-50"
+          onClick={onClose}
+        >
+          Google Calendar
+        </a>
+        <button
+          type="button"
+          onClick={() => { downloadIcs(event); onClose(); }}
+          className="block w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50"
+        >
+          Apple / Outlook (.ics)
+        </button>
       </div>
     </div>
   );
