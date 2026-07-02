@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router";
 import { useRef, useState, useEffect } from "react";
-import { ChevronLeft, ChevronRight, Star, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Star, Plus, CalendarPlus } from "lucide-react";
 import type { Room, Booking, User } from "~/types";
 import { isAdmin } from "~/types";
 
@@ -391,6 +391,7 @@ function BookingSlot({
   const navigate = useNavigate();
   const isOwn = booking.requester_id === userId;
   const isCounter = booking.status === 'counter_proposed';
+  const effectiveDate = isCounter && booking.counter_date ? booking.counter_date : booking.date;
   const effectiveStart = isCounter && booking.counter_start_time ? booking.counter_start_time : booking.start_time;
   const effectiveEnd = isCounter && booking.counter_end_time ? booking.counter_end_time : booking.end_time;
   const top = timeToSlot(effectiveStart) * SLOT_HEIGHT;
@@ -414,6 +415,11 @@ function BookingSlot({
     navigate(`/rezerwacje/${booking.id}`);
   }
 
+  function handleAddToCalendar(e: React.MouseEvent) {
+    e.stopPropagation();
+    downloadIcs(booking, effectiveDate, effectiveStart, effectiveEnd);
+  }
+
   return (
     <div
       className={`absolute rounded overflow-hidden text-xs px-1.5 py-1 z-10 ${colorClass} ${
@@ -423,6 +429,14 @@ function BookingSlot({
       onClick={handleClick}
       title={isBooked && !isOwn ? booking.title ?? 'Zarezerwowano' : undefined}
     >
+      <button
+        onClick={handleAddToCalendar}
+        title="Dodaj do kalendarza"
+        aria-label="Dodaj do kalendarza"
+        className="absolute top-0.5 left-0.5 z-20 p-0.5 rounded bg-white/80 hover:bg-white text-gray-600 hover:text-gray-900 shadow-sm leading-none"
+      >
+        <CalendarPlus size={11} />
+      </button>
       <p className="font-semibold leading-tight truncate">{booking.title ?? label}</p>
       <p className="opacity-80 truncate">{effectiveStart}–{effectiveEnd}</p>
       {isAdminView && booking.requester_role === 'zarzad' && (
@@ -431,6 +445,37 @@ function BookingSlot({
       <p className="absolute bottom-1 right-1.5 opacity-60 text-[10px] leading-none">{label}</p>
     </div>
   );
+}
+
+function downloadIcs(booking: Booking, date: string, startTime: string, endTime: string) {
+  const toIcsDateTime = (d: string, t: string) => `${d.replace(/-/g, '')}T${t.replace(':', '')}00`;
+  const dtStamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+  const summary = (booking.title ?? 'Rezerwacja sali').replace(/\r?\n/g, ' ');
+
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Lafrentz//Rezerwacja Sal//PL',
+    'BEGIN:VEVENT',
+    `UID:booking-${booking.id}-${dtStamp}@salki.lafrentz.pl`,
+    `DTSTAMP:${dtStamp}`,
+    `DTSTART:${toIcsDateTime(date, startTime)}`,
+    `DTEND:${toIcsDateTime(date, endTime)}`,
+    `SUMMARY:${summary}`,
+    ...(booking.room_name ? [`LOCATION:${booking.room_name}`] : []),
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ];
+
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `rezerwacja-${booking.id}.ics`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function getSlotColor(status: Booking['status'], isOwn: boolean, requesterRole?: string, isAdminView?: boolean): string {
