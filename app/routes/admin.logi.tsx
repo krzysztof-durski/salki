@@ -1,8 +1,11 @@
+import { Link } from "react-router";
 import type { Route } from "./+types/admin.logi";
 import { getTokenFromRequest, getSessionUser, requireUser } from "~/lib/auth.server";
 import { queryAll } from "~/lib/db.server";
 import { canViewAuditLogs } from "~/types";
 import type { AuditLog } from "~/types";
+
+type AuditLogRow = AuditLog & { entity_name: string | null };
 
 export async function loader({ request, context }: Route.LoaderArgs) {
   const { env } = context.cloudflare;
@@ -15,11 +18,15 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const limit = 50;
   const offset = (page - 1) * limit;
 
-  const logs = await queryAll<AuditLog>(
+  const logs = await queryAll<AuditLogRow>(
     env.DB,
-    `SELECT al.*, u.name as user_name
+    `SELECT al.*, u.name as user_name,
+       COALESCE(b.title, tu.name, r.name) as entity_name
      FROM audit_logs al
      LEFT JOIN users u ON u.id=al.user_id
+     LEFT JOIN bookings b ON al.entity_type='booking' AND b.id=al.entity_id
+     LEFT JOIN users tu ON al.entity_type='user' AND tu.id=al.entity_id
+     LEFT JOIN rooms r ON al.entity_type='room' AND r.id=al.entity_id
      ORDER BY al.created_at DESC
      LIMIT ? OFFSET ?`,
     [limit, offset]
@@ -51,6 +58,13 @@ const ACTION_LABELS: Record<string, string> = {
   'room.toggled': 'Zmieniono status sali',
 };
 
+const ENTITY_TYPE_LABELS: Record<string, string> = {
+  booking: 'Rezerwacja',
+  user: 'Użytkownik',
+  room: 'Sala',
+  change_request: 'Wniosek o zmianę',
+};
+
 export default function AdminLogi({ loaderData }: Route.ComponentProps) {
   const { logs, page, total, limit } = loaderData;
   const totalPages = Math.ceil(total / limit);
@@ -79,7 +93,21 @@ export default function AdminLogi({ loaderData }: Route.ComponentProps) {
                 <td className="px-4 py-3 text-gray-700">{log.user_name ?? <span className="text-gray-400">—</span>}</td>
                 <td className="px-4 py-3 text-gray-900 font-medium">{ACTION_LABELS[log.action] ?? log.action}</td>
                 <td className="px-4 py-3 text-gray-500">
-                  {log.entity_type}{log.entity_id ? ` #${log.entity_id}` : ''}
+                  {log.entity_id ? (
+                    <>
+                      <span>{ENTITY_TYPE_LABELS[log.entity_type] ?? log.entity_type}</span>
+                      {': '}
+                      {log.entity_type === 'booking' ? (
+                        <Link to={`/rezerwacje/${log.entity_id}`} className="text-blue-600 hover:underline">
+                          {log.entity_name ?? `#${log.entity_id}`}
+                        </Link>
+                      ) : (
+                        <span>{log.entity_name ?? `#${log.entity_id}`}</span>
+                      )}
+                    </>
+                  ) : (
+                    <span>{ENTITY_TYPE_LABELS[log.entity_type] ?? log.entity_type}</span>
+                  )}
                 </td>
               </tr>
             ))}
