@@ -2,7 +2,7 @@ import { queryOne, execute } from './db.server';
 import type { User } from '~/types';
 
 const SESSION_COOKIE = 'session';
-const SESSION_DURATION_HOURS = 24;
+const SESSION_DURATION_HOURS = 24 * 7;
 
 // ─── Password ────────────────────────────────────────────────────────────────
 
