@@ -5,6 +5,9 @@ export default [
   route("login",  "routes/login.tsx"),
   route("logout", "routes/logout.tsx"),
 
+  // Public legal pages (no shell, no auth required)
+  route("regulamin", "routes/regulamin.tsx"),
+
   // Observer (shared-password, read-only, no shell)
   route("obserwator",           "routes/obserwator.tsx"),
   route("obserwator/kalendarz", "routes/obserwator.kalendarz.tsx"),
@@ -23,7 +26,6 @@ export default [
     route("rezerwacje/:id/zmiana",         "routes/rezerwacje.$id.zmiana.tsx"),
     route("ustawienia",                    "routes/ustawienia.tsx"),
     route("powiadomienia",                 "routes/powiadomienia.tsx"),
-    route("regulamin",                     "routes/regulamin.tsx"),
 
     // Admin routes (admin + super_admin)
     ...prefix("admin", [

@@ -1,8 +1,14 @@
+import { Link } from "react-router";
+
 export default function Regulamin() {
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8 space-y-8">
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-3xl mx-auto px-4 py-8 space-y-8">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Regulamin</h1>
+        <Link to="/" className="text-xs text-gray-400 hover:text-gray-600 hover:underline">
+          ← Powrót
+        </Link>
+        <h1 className="text-2xl font-bold text-gray-900 mt-2">Regulamin</h1>
         <p className="text-sm text-gray-500 mt-1">
           System rezerwacji sal — aplikacja wewnętrzna Lafrentz
         </p>
@@ -78,13 +84,74 @@ export default function Regulamin() {
         </div>
 
         <div className="space-y-1">
-          <h3 className="font-medium text-gray-900">4. Zakazane działania</h3>
+          <h3 className="font-medium text-gray-900">
+            4. Tryb obserwatora (podgląd bez logowania)
+          </h3>
+          <ul className="text-sm text-gray-600 list-disc list-inside space-y-1">
+            <li>
+              Osoby nieposiadające indywidualnego konta mogą uzyskać wyłącznie
+              podglądowy (bez możliwości edycji) dostęp do kalendarzy sal
+              ogólnych po podaniu wspólnego hasła dostępowego udostępnionego na
+              stronie logowania.
+            </li>
+            <li>
+              Hasło obserwatora jest wspólne dla wszystkich korzystających z
+              tego trybu, nie jest przypisane do konkretnej osoby i nie stanowi
+              indywidualnych danych logowania — nie należy go udostępniać
+              osobom spoza firmy.
+            </li>
+            <li>
+              W trybie obserwatora widoczne są wyłącznie zatwierdzone
+              rezerwacje sal ogólnych (tytuł, data, godziny, nazwa sali). Sale
+              zarządu, dane osoby rezerwującej, lista uczestników oraz notatki
+              nie są w tym trybie widoczne.
+            </li>
+            <li>
+              Administrator (super admin) może w każdej chwili wyłączyć tryb
+              obserwatora lub zmienić hasło dostępowe.
+            </li>
+          </ul>
+        </div>
+
+        <div className="space-y-1">
+          <h3 className="font-medium text-gray-900">
+            5. Eksport rezerwacji do kalendarza prywatnego
+          </h3>
+          <ul className="text-sm text-gray-600 list-disc list-inside space-y-1">
+            <li>
+              Przy rezerwacji dostępna jest opcja „Dodaj do kalendarza”,
+              pozwalająca użytkownikowi dobrowolnie dodać dany termin do
+              własnego kalendarza prywatnego (Google Calendar) lub pobrać plik
+              w formacie .ics do zaimportowania w dowolnej aplikacji
+              kalendarza.
+            </li>
+            <li>
+              Eksport odbywa się bezpośrednio z przeglądarki użytkownika —
+              system nie przekazuje danych rezerwacji do Google ani innego
+              dostawcy kalendarza we własnym zakresie. Decyzję o zapisaniu
+              wydarzenia w zewnętrznym kalendarzu podejmuje wyłącznie
+              użytkownik.
+            </li>
+            <li>
+              Po wyeksportowaniu dane wydarzenia (tytuł, data, godziny, nazwa
+              sali, ewentualna notatka) podlegają zasadom przetwarzania danych
+              stosowanym przez wybraną usługę kalendarza (np. politykę
+              prywatności Google) i nie są już objęte niniejszym regulaminem.
+            </li>
+          </ul>
+        </div>
+
+        <div className="space-y-1">
+          <h3 className="font-medium text-gray-900">6. Zakazane działania</h3>
           <ul className="text-sm text-gray-600 list-disc list-inside space-y-1">
             <li>
               Dokonywanie rezerwacji „na wszelki wypadek” bez realnej potrzeby,
               blokujące dostępność sal innym pracownikom.
             </li>
-            <li>Udostępnianie danych logowania osobom trzecim.</li>
+            <li>
+              Udostępnianie danych logowania oraz wspólnego hasła obserwatora
+              osobom trzecim spoza firmy.
+            </li>
             <li>
               Podejmowanie prób obejścia zabezpieczeń systemu lub uzyskania
               dostępu do funkcji poza przyznaną rolą.
@@ -93,7 +160,7 @@ export default function Regulamin() {
         </div>
 
         <div className="space-y-1">
-          <h3 className="font-medium text-gray-900">5. Kontakt</h3>
+          <h3 className="font-medium text-gray-900">7. Kontakt</h3>
           <p className="text-sm text-gray-600">
             Pytania dotyczące działania systemu, problemy techniczne lub
             zgłoszenia naruszeń regulaminu należy kierować do administratora
@@ -199,6 +266,20 @@ export default function Regulamin() {
                     Art. 6 ust. 1 lit. b RODO — wykonanie umowy
                   </td>
                 </tr>
+                <tr>
+                  <td className="px-3 py-2">
+                    Token sesji obserwatora (dostęp na wspólne hasło, bez
+                    konta i danych osobowych osoby przeglądającej)
+                  </td>
+                  <td className="px-3 py-2">
+                    Udostępnienie podglądu kalendarzy sal ogólnych osobom bez
+                    indywidualnego konta
+                  </td>
+                  <td className="px-3 py-2">
+                    Art. 6 ust. 1 lit. f RODO — uzasadniony interes
+                    administratora
+                  </td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -248,6 +329,12 @@ export default function Regulamin() {
                     Do momentu wylogowania lub wygaśnięcia sesji
                   </td>
                 </tr>
+                <tr>
+                  <td className="px-3 py-2">Sesja obserwatora</td>
+                  <td className="px-3 py-2">
+                    Do momentu zakończenia podglądu lub wygaśnięcia sesji
+                  </td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -272,6 +359,25 @@ export default function Regulamin() {
             </a>
             . Dane nie są przekazywane innym podmiotom zewnętrznym ani
             wykorzystywane w celach marketingowych.
+          </p>
+          <p className="text-sm text-gray-600">
+            Wyjątkiem jest opcjonalna, dobrowolna funkcja „Dodaj do
+            kalendarza” — jeśli użytkownik sam z niej skorzysta, dane
+            wydarzenia (tytuł, data, godziny, nazwa sali) są przekazywane
+            bezpośrednio z jego przeglądarki do <strong>Google Calendar</strong>{" "}
+            (Google Ireland Limited) albo zapisywane lokalnie jako plik .ics.
+            System nie inicjuje tego przekazania automatycznie ani nie
+            przechowuje kopii wyeksportowanych danych po stronie Google.
+            Polityka prywatności Google:{" "}
+            <a
+              href="https://policies.google.com/privacy"
+              target="_blank"
+              rel="noreferrer"
+              className="text-blue-600 hover:underline"
+            >
+              policies.google.com/privacy
+            </a>
+            .
           </p>
         </div>
 
@@ -335,8 +441,9 @@ export default function Regulamin() {
       </section>
 
       <p className="text-xs text-gray-400">
-        Dokument zaktualizowany: 2026-07-01
+        Dokument zaktualizowany: 2026-07-06
       </p>
+      </div>
     </div>
   );
 }
