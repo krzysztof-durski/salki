@@ -1,6 +1,6 @@
 import { redirect, data, Form, Link, useNavigation, useSearchParams } from "react-router";
 import type { Route } from "./+types/ustawienia";
-import { getTokenFromRequest, getSessionUser, requireUser, hashPassword, verifyPassword } from "~/lib/auth.server";
+import { getTokenFromRequest, getSessionUser, requireUser, hashPassword, verifyPassword, deleteOtherSessions } from "~/lib/auth.server";
 import { queryAll, execute } from "~/lib/db.server";
 import type { Room } from "~/types";
 
@@ -49,6 +49,8 @@ export async function action({ request, context }: Route.ActionArgs) {
       "UPDATE users SET password_hash=?, must_change_password=0, updated_at=CURRENT_TIMESTAMP WHERE id=?",
       [hash, user.id]
     );
+    // Revoke every other session so a stolen/leaked login doesn't survive this change.
+    await deleteOtherSessions(env.DB, user.id, token);
     // After forced first-login password change, go straight to the app
     return redirect(wasForced ? "/" : "/ustawienia?ok=1");
   }

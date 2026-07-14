@@ -40,13 +40,17 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   let status = 500;
   let message = "Coś poszło nie tak.";
 
-  if (isRouteErrorResponse(error)) {
-    status = error.status;
-    message = JSON.stringify({ status: error.status, statusText: error.statusText, data: error.data });
-  } else if (error instanceof Error) {
-    message = error.message + '\n' + error.stack;
-  } else {
-    message = JSON.stringify(error);
+  if (import.meta.env.DEV) {
+    if (isRouteErrorResponse(error)) {
+      status = error.status;
+      message = JSON.stringify({ status: error.status, statusText: error.statusText, data: error.data });
+    } else if (error instanceof Error) {
+      message = error.message + '\n' + error.stack;
+    } else {
+      message = JSON.stringify(error);
+    }
+  } else if (isRouteErrorResponse(error)) {
+    status = error.status; // status code alone isn't sensitive
   }
 
   return (

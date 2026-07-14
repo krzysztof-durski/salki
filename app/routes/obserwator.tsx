@@ -5,6 +5,7 @@ import {
   createObserverSession, setObserverSessionCookie,
 } from "~/lib/auth.server";
 import { queryOne } from "~/lib/db.server";
+import { checkRateLimit, recordFailedAttempt, clearAttempts } from "~/lib/rate-limit.server";
 
 interface ObserverSettings {
   password: string | null;
@@ -29,10 +30,21 @@ export async function action({ request, context }: Route.ActionArgs) {
     return data({ error: "Wpisz hasło." }, { status: 400 });
   }
 
+  const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown';
+  const bucketKey = `observer:${ip}`;
+
+  const rl = await checkRateLimit(env.DB, bucketKey);
+  if (!rl.allowed) {
+    return data({ error: "Zbyt wiele nieudanych prób. Spróbuj ponownie za kilka minut." }, { status: 429 });
+  }
+
   const settings = await queryOne<ObserverSettings>(env.DB, "SELECT password, is_enabled FROM observer_settings WHERE id = 1");
   if (!settings?.is_enabled || !settings.password || password !== settings.password) {
+    await recordFailedAttempt(env.DB, bucketKey);
     return data({ error: "Nieprawidłowe hasło." }, { status: 401 });
   }
+
+  await clearAttempts(env.DB, bucketKey);
 
   const token = await createObserverSession(env.DB);
   const headers = new Headers();

@@ -53,10 +53,15 @@ export async function action({ request, context }: Route.ActionArgs) {
     const tempPass = tempPasswordFromName(name);
     const hash = await hashPassword(tempPass);
 
-    const canAssignAdmin    = actor.role === 'super_admin' && role === 'admin' ? (form.get("admin_can_assign_admin")    === "1" ? 1 : 0) : 1;
-    const canAssignZarzad   = actor.role === 'super_admin' && role === 'admin' ? (form.get("admin_can_assign_zarzad")   === "1" ? 1 : 0) : 0;
-    const canAssignPracownik= actor.role === 'super_admin' && role === 'admin' ? (form.get("admin_can_assign_pracownik")=== "1" ? 1 : 0) : 1;
-    const canManageRoomsVal = actor.role === 'super_admin' && role === 'admin' ? (form.get("admin_can_manage_rooms")    === "1" ? 1 : 0) : 0;
+    // Only a super_admin creating an admin gets to set these delegation
+    // flags explicitly; every other combination (including an admin creating
+    // another admin) defaults to no delegated permissions at all, rather than
+    // silently inheriting elevated defaults.
+    const isSuperAdminCreatingAdmin = actor.role === 'super_admin' && role === 'admin';
+    const canAssignAdmin     = isSuperAdminCreatingAdmin ? (form.get("admin_can_assign_admin")     === "1" ? 1 : 0) : 0;
+    const canAssignZarzad    = isSuperAdminCreatingAdmin ? (form.get("admin_can_assign_zarzad")    === "1" ? 1 : 0) : 0;
+    const canAssignPracownik = isSuperAdminCreatingAdmin ? (form.get("admin_can_assign_pracownik") === "1" ? 1 : 0) : 0;
+    const canManageRoomsVal  = isSuperAdminCreatingAdmin ? (form.get("admin_can_manage_rooms")     === "1" ? 1 : 0) : 0;
 
     try {
       await execute(

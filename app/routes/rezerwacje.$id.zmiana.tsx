@@ -6,6 +6,7 @@ import { logAction } from "~/lib/audit.server";
 import { notifyAdmins } from "~/lib/notify.server";
 import { canManageBookings, isAdmin } from "~/types";
 import type { Booking, BookingChangeRequest } from "~/types";
+import { isValidDateFormat, isValidTimeFormat, parseAttendeeCount } from "~/lib/validation.server";
 
 export async function loader({ params, request, context }: Route.LoaderArgs) {
   const { env } = context.cloudflare;
@@ -54,19 +55,13 @@ export async function action({ params, request, context }: Route.ActionArgs) {
     if (!cr) return data({ error: "Nie znaleziono wniosku o zmianę." }, { status: 404 });
 
     if (_action === "approve_cr") {
-      if (cr.new_date || cr.new_start_time || cr.new_end_time) {
-        const newDate = cr.new_date ?? booking.date;
-        const newStart = cr.new_start_time ?? booking.start_time;
-        const newEnd = cr.new_end_time ?? booking.end_time;
-        const conflict = await queryOne<{ n: number }>(
-          env.DB,
-          `SELECT COUNT(*) as n FROM bookings
-           WHERE room_id = ? AND date = ? AND status = 'approved' AND id != ?
-             AND start_time < ? AND end_time > ?`,
-          [booking.room_id, newDate, bookingId, newEnd, newStart]
-        );
-        if ((conflict?.n ?? 0) > 0) {
-          return data({ error: "Proponowany termin jest już zajęty — nie można zatwierdzić zmiany." }, { status: 409 });
+      // Defend against a pre-existing CR row inserted before order validation
+      // existed at the submission site.
+      if (cr.new_start_time || cr.new_end_time) {
+        const effStart = cr.new_start_time ?? booking.start_time;
+        const effEnd = cr.new_end_time ?? booking.end_time;
+        if (effStart >= effEnd) {
+          return data({ error: "Wniosek zawiera nieprawidłowy zakres godzin i nie może zostać zatwierdzony." }, { status: 400 });
         }
       }
 
@@ -82,12 +77,29 @@ export async function action({ params, request, context }: Route.ActionArgs) {
       if (cr.requester_note)     { updates.push("requester_note=?"); vals.push(cr.requester_note); }
 
       if (updates.length > 0) {
-        await execute(
+        // Version check AND room-conflict check folded into one atomic
+        // UPDATE. COALESCE falls back to the row's current date/time when
+        // the CR doesn't touch that field. `updates` only ever contains
+        // fixed literal strings from the whitelist above — never user input.
+        const result = await execute(
           env.DB,
-          `UPDATE bookings SET ${updates.join(', ')}, version=version+1, updated_at=CURRENT_TIMESTAMP
-           WHERE id=? AND status='approved'`,
-          [...vals, bookingId]
+          `UPDATE bookings
+           SET ${updates.join(', ')}, version=version+1, updated_at=CURRENT_TIMESTAMP
+           WHERE id=? AND version=? AND status='approved'
+             AND NOT EXISTS (
+               SELECT 1 FROM bookings b2
+               WHERE b2.room_id = bookings.room_id
+                 AND b2.date = COALESCE(?, bookings.date)
+                 AND b2.status = 'approved'
+                 AND b2.id != bookings.id
+                 AND b2.start_time < COALESCE(?, bookings.end_time)
+                 AND b2.end_time   > COALESCE(?, bookings.start_time)
+             )`,
+          [...vals, bookingId, booking.version, cr.new_date ?? null, cr.new_end_time ?? null, cr.new_start_time ?? null]
         );
+        if (!result.meta.changes) {
+          return data({ error: "Nie można zatwierdzić — rezerwacja została zmieniona lub termin jest już zajęty. Odśwież stronę." }, { status: 409 });
+        }
       }
 
       await execute(env.DB,
@@ -121,7 +133,11 @@ export async function action({ params, request, context }: Route.ActionArgs) {
   const newStartTime = (form.get("new_start_time") as string)?.trim() || null;
   const newEndTime = (form.get("new_end_time") as string)?.trim() || null;
   const newTitle = (form.get("new_title") as string)?.trim() || null;
-  const newAttendeeCount = form.get("new_attendee_count") ? parseInt(form.get("new_attendee_count") as string, 10) : null;
+  const attendeeResult = parseAttendeeCount(form.get("new_attendee_count"));
+  if (!attendeeResult.ok) {
+    return data({ error: attendeeResult.error }, { status: 400 });
+  }
+  const newAttendeeCount = attendeeResult.value;
   const requesterNote = (form.get("requester_note") as string)?.trim() || null;
   const notifyReception = form.get("notify_reception") === "on";
 
@@ -131,19 +147,14 @@ export async function action({ params, request, context }: Route.ActionArgs) {
     const targetStart = newStartTime ?? booking.start_time;
     const targetEnd = newEndTime ?? booking.end_time;
 
+    if (!isValidDateFormat(targetDate)) {
+      return data({ error: "Nieprawidłowy format daty." }, { status: 400 });
+    }
+    if (!isValidTimeFormat(targetStart) || !isValidTimeFormat(targetEnd)) {
+      return data({ error: "Nieprawidłowy format godziny." }, { status: 400 });
+    }
     if (targetStart >= targetEnd) {
       return data({ error: "Godzina końca musi być późniejsza niż godzina początku." }, { status: 400 });
-    }
-
-    const conflict = await queryOne<{ n: number }>(
-      env.DB,
-      `SELECT COUNT(*) as n FROM bookings
-       WHERE room_id = ? AND date = ? AND status = 'approved' AND id != ?
-         AND start_time < ? AND end_time > ?`,
-      [booking.room_id, targetDate, bookingId, targetEnd, targetStart]
-    );
-    if ((conflict?.n ?? 0) > 0) {
-      return data({ error: "Ta sala jest już zarezerwowana w wybranym terminie." }, { status: 409 });
     }
 
     const originals: Record<string, string> = {};
@@ -156,17 +167,27 @@ export async function action({ params, request, context }: Route.ActionArgs) {
     if ((requesterNote ?? booking.requester_note ?? '') !== (booking.requester_note ?? ''))
       originals.note = booking.requester_note ?? '';
 
-    await execute(
+    // Version check AND room-conflict check folded into one atomic UPDATE.
+    const result = await execute(
       env.DB,
       `UPDATE bookings
        SET date=?, start_time=?, end_time=?, title=?, attendee_count=?, requester_note=?,
            zarzad_edited_fields=?, version=version+1, updated_at=CURRENT_TIMESTAMP
-       WHERE id=? AND status='approved' AND requester_id=?`,
+       WHERE id=? AND version=? AND status='approved' AND requester_id=?
+         AND NOT EXISTS (
+           SELECT 1 FROM bookings b2
+           WHERE b2.room_id = bookings.room_id AND b2.date = ? AND b2.status = 'approved'
+             AND b2.id != bookings.id AND b2.start_time < ? AND b2.end_time > ?
+         )`,
       [targetDate, targetStart, targetEnd, newTitle ?? booking.title, newAttendeeCount ?? booking.attendee_count,
        requesterNote ?? booking.requester_note,
        Object.keys(originals).length ? JSON.stringify(originals) : null,
-       bookingId, user.id]
+       bookingId, booking.version, user.id,
+       targetDate, targetEnd, targetStart]
     );
+    if (!result.meta.changes) {
+      return data({ error: "Rezerwacja została zmieniona w międzyczasie, lub termin jest już zajęty. Odśwież stronę i spróbuj ponownie." }, { status: 409 });
+    }
 
     await logAction(env.DB, {
       userId: user.id,
@@ -198,17 +219,43 @@ export async function action({ params, request, context }: Route.ActionArgs) {
   const hasNoteChange     = requesterNote !== (booking.requester_note ?? null);
   const hasCRChanges      = hasDateChange || hasStartChange || hasEndChange || hasAttendeeChange;
 
+  if (newDate !== null && !isValidDateFormat(newDate)) {
+    return data({ error: "Nieprawidłowy format daty." }, { status: 400 });
+  }
+  if (newStartTime !== null && !isValidTimeFormat(newStartTime)) {
+    return data({ error: "Nieprawidłowy format godziny początku." }, { status: 400 });
+  }
+  if (newEndTime !== null && !isValidTimeFormat(newEndTime)) {
+    return data({ error: "Nieprawidłowy format godziny końca." }, { status: 400 });
+  }
+  if (hasStartChange || hasEndChange) {
+    const effStart = newStartTime ?? booking.start_time;
+    const effEnd = newEndTime ?? booking.end_time;
+    if (effStart >= effEnd) {
+      return data({ error: "Godzina końca musi być późniejsza niż godzina początku." }, { status: 400 });
+    }
+  }
+
   if (!hasCRChanges && !hasTitleChange && !hasNoteChange) {
     return data({ error: "Podaj przynajmniej jedną zmianę." }, { status: 400 });
   }
 
+  // Tracks version across up to 2 sequential UPDATEs below (note-only, then
+  // possibly title-only) so the second doesn't spuriously conflict against
+  // the version the first one already bumped.
+  let currentVersion = booking.version;
+
   // Notes always apply directly without admin approval
   if (hasNoteChange) {
-    await execute(
+    const result = await execute(
       env.DB,
-      `UPDATE bookings SET requester_note=?, version=version+1, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
-      [requesterNote, bookingId]
+      `UPDATE bookings SET requester_note=?, version=version+1, updated_at=CURRENT_TIMESTAMP WHERE id=? AND version=?`,
+      [requesterNote, bookingId, currentVersion]
     );
+    if (!result.meta.changes) {
+      return data({ error: "Rezerwacja została zmieniona w międzyczasie. Odśwież stronę i spróbuj ponownie." }, { status: 409 });
+    }
+    currentVersion += 1;
   }
 
   // Build notification details
@@ -229,12 +276,15 @@ export async function action({ params, request, context }: Route.ActionArgs) {
 
   // Title-only (+ possibly note) — apply directly, no CR
   if (hasTitleChange && !hasCRChanges) {
-    await execute(
+    const result = await execute(
       env.DB,
       `UPDATE bookings SET title=?, version=version+1, updated_at=CURRENT_TIMESTAMP
-       WHERE id=? AND status='approved' AND requester_id=?`,
-      [newTitle, bookingId, user.id]
+       WHERE id=? AND version=? AND status='approved' AND requester_id=?`,
+      [newTitle, bookingId, currentVersion, user.id]
     );
+    if (!result.meta.changes) {
+      return data({ error: "Rezerwacja została zmieniona w międzyczasie. Odśwież stronę i spróbuj ponownie." }, { status: 409 });
+    }
     await logAction(env.DB, {
       userId: user.id,
       action: 'booking.title_changed',

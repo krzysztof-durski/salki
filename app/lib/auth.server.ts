@@ -45,6 +45,14 @@ export function generateToken(bytes = 32): string {
     .join('');
 }
 
+// Precomputed hash (same format/iteration count as hashPassword) of an unused
+// placeholder password. login.tsx verifies against this when no matching user
+// exists, so verifyPassword's cost is representative either way and response
+// timing can't be used to enumerate accounts. The plaintext behind this hash
+// is never used again.
+export const DUMMY_PASSWORD_HASH =
+  'pbkdf2:829d199b73ee2c952d326f558cb6edf8:c7e7a1cbee674e08c41854d3783d2c72ab5e85af7239b1172c65043965826211';
+
 // ─── Session ─────────────────────────────────────────────────────────────────
 
 export async function createSession(db: CloudflareEnv['DB'], userId: number): Promise<string> {
@@ -68,6 +76,12 @@ export async function getSessionUser(db: CloudflareEnv['DB'], token: string): Pr
 
 export async function deleteSession(db: CloudflareEnv['DB'], token: string): Promise<void> {
   await execute(db, 'DELETE FROM sessions WHERE id = ?', [token]);
+}
+
+// Revoke every other session for this user, keeping the current one alive.
+// Called on password change so a stolen/leaked session doesn't survive it.
+export async function deleteOtherSessions(db: CloudflareEnv['DB'], userId: number, keepToken: string): Promise<void> {
+  await execute(db, 'DELETE FROM sessions WHERE user_id = ? AND id != ?', [userId, keepToken]);
 }
 
 export async function purgeExpiredSessions(db: CloudflareEnv['DB']): Promise<void> {

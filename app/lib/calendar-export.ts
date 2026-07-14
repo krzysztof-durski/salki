@@ -9,7 +9,11 @@ export interface CalendarExportEvent {
 }
 
 function escapeIcs(s: string): string {
-  return s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+  return s
+    .replace(/\\/g, '\\\\')
+    .replace(/;/g, '\\;')
+    .replace(/,/g, '\\,')
+    .replace(/\r\n|\r|\n/g, '\\n'); // normalize CRLF/CR/LF together to avoid double-escaping
 }
 
 function toIcsDateTime(date: string, time: string): string {
@@ -26,8 +30,8 @@ export function buildIcsContent(event: CalendarExportEvent): string {
     'VERSION:2.0',
     'PRODID:-//Salki//Rezerwacje//PL',
     'BEGIN:VEVENT',
-    `DTSTART:${dtStart}`,
-    `DTEND:${dtEnd}`,
+    `DTSTART:${escapeIcs(dtStart)}`,
+    `DTEND:${escapeIcs(dtEnd)}`,
     `SUMMARY:${escapeIcs(title)}`,
     event.location ? `LOCATION:${escapeIcs(event.location)}` : null,
     event.description ? `DESCRIPTION:${escapeIcs(event.description)}` : null,

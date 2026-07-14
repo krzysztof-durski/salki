@@ -5,6 +5,7 @@ import { queryOne, queryAll, execute } from "~/lib/db.server";
 import { logAction } from "~/lib/audit.server";
 import { isAdmin } from "~/types";
 import type { Booking, Room } from "~/types";
+import { isValidDateFormat, isValidTimeFormat, parseAttendeeCount } from "~/lib/validation.server";
 
 export async function loader({ params, request, context }: Route.LoaderArgs) {
   const { env } = context.cloudflare;
@@ -49,7 +50,6 @@ export async function action({ params, request, context }: Route.ActionArgs) {
   const startTime = form.get("start_time") as string;
   const endTime = form.get("end_time") as string;
   const title = (form.get("title") as string)?.trim() || null;
-  const attendeeCount = form.get("attendee_count") ? parseInt(form.get("attendee_count") as string, 10) : null;
   const requesterNote = (form.get("requester_note") as string)?.trim() || null;
   const adminNote = (form.get("admin_note") as string)?.trim() || null;
   const bookingId = parseInt(params.id as string, 10);
@@ -64,52 +64,76 @@ export async function action({ params, request, context }: Route.ActionArgs) {
 
   if (!adminUser && booking.requester_id !== user.id) throw new Response(null, { status: 403 });
 
+  if (!date || !startTime || !endTime) {
+    return data({ error: "Wypełnij wymagane pola." }, { status: 400 });
+  }
+  if (!isValidDateFormat(date)) {
+    return data({ error: "Nieprawidłowy format daty." }, { status: 400 });
+  }
+  if (!isValidTimeFormat(startTime) || !isValidTimeFormat(endTime)) {
+    return data({ error: "Nieprawidłowy format godziny." }, { status: 400 });
+  }
   if (startTime >= endTime) {
     return data({ error: "Godzina końca musi być późniejsza niż godzina początku." }, { status: 400 });
   }
+  const attendeeResult = parseAttendeeCount(form.get("attendee_count"));
+  if (!attendeeResult.ok) {
+    return data({ error: attendeeResult.error }, { status: 400 });
+  }
+  const attendeeCount = attendeeResult.value;
 
-  const targetRoomId = adminUser && roomId ? roomId : booking.room_id;
-
-  // Overlap check — exclude this booking itself
-  const overlap = await queryOne<{ n: number }>(
-    env.DB,
-    `SELECT COUNT(*) as n FROM bookings
-     WHERE room_id = ? AND date = ? AND status = 'approved' AND id != ?
-       AND start_time < ? AND end_time > ?`,
-    [targetRoomId, date, bookingId, endTime, startTime]
-  );
-  if ((overlap?.n ?? 0) > 0) {
-    return data({ error: "Ta sala jest już zarezerwowana w wybranym terminie." }, { status: 409 });
+  // Admin-supplied room must exist and be active
+  let targetRoomId = booking.room_id;
+  if (adminUser && roomId) {
+    const targetRoom = await queryOne<{ id: number }>(env.DB, "SELECT id FROM rooms WHERE id = ? AND is_active = 1", [roomId]);
+    if (!targetRoom) return data({ error: "Nieprawidłowa lub nieaktywna sala." }, { status: 400 });
+    targetRoomId = targetRoom.id;
   }
 
   if (adminUser) {
-    // Admins can edit any booking; optimistic lock still applies
+    // Admins can edit any booking; overlap check and version check folded
+    // into one atomic UPDATE via NOT EXISTS, closing the race window between
+    // a separate check and this write.
     const result = await execute(
       env.DB,
       `UPDATE bookings
        SET room_id=?, date=?, start_time=?, end_time=?, title=?, attendee_count=?,
            requester_note=?, admin_note=?, version=version+1, updated_at=CURRENT_TIMESTAMP
-       WHERE id=? AND version=?`,
-      [targetRoomId, date, startTime, endTime, title, attendeeCount,
-       requesterNote, adminNote, bookingId, version]
+       WHERE id=? AND version=?
+         AND NOT EXISTS (
+           SELECT 1 FROM bookings b2
+           WHERE b2.room_id = ? AND b2.date = ? AND b2.status = 'approved'
+             AND b2.id != bookings.id AND b2.start_time < ? AND b2.end_time > ?
+         )`,
+      [targetRoomId, date, startTime, endTime, title, attendeeCount, requesterNote, adminNote,
+       bookingId, version,
+       targetRoomId, date, endTime, startTime]
     );
     if (!result.meta.changes) {
-      return data({ error: "Konflikt — ktoś inny zmodyfikował tę rezerwację. Odśwież i spróbuj ponownie." }, { status: 409 });
+      return data({ error: "Konflikt — ktoś inny zmodyfikował tę rezerwację, lub termin jest już zajęty. Odśwież i spróbuj ponownie." }, { status: 409 });
     }
 
   } else {
-    // Regular user: only pending, own booking, no room change
+    // Regular user: only pending, own booking, no room change. Atomicity
+    // here is mainly UX-correctness (this row stays 'pending' either way)
+    // but kept consistent with the admin path above.
     const result = await execute(
       env.DB,
       `UPDATE bookings
        SET date=?, start_time=?, end_time=?, title=?, attendee_count=?,
            requester_note=?, version=version+1, updated_at=CURRENT_TIMESTAMP
-       WHERE id=? AND version=? AND status='pending' AND requester_id=?`,
-      [date, startTime, endTime, title, attendeeCount, requesterNote, bookingId, version, user.id]
+       WHERE id=? AND version=? AND status='pending' AND requester_id=?
+         AND NOT EXISTS (
+           SELECT 1 FROM bookings b2
+           WHERE b2.room_id = bookings.room_id AND b2.date = ? AND b2.status = 'approved'
+             AND b2.id != bookings.id AND b2.start_time < ? AND b2.end_time > ?
+         )`,
+      [date, startTime, endTime, title, attendeeCount, requesterNote, bookingId, version, user.id,
+       date, endTime, startTime]
     );
     if (!result.meta.changes) {
       return data({
-        error: "Twój wniosek został właśnie przetworzony przez administratora. Edycja nie jest możliwa.",
+        error: "Twój wniosek został właśnie przetworzony przez administratora, lub termin jest już zajęty. Edycja nie jest możliwa.",
       }, { status: 409 });
     }
   }

@@ -8,6 +8,7 @@ import { logAction } from "~/lib/audit.server";
 import { isAdmin, canManageBookings } from "~/types";
 import type { Booking, BookingChangeRequest, User } from "~/types";
 import { buildGoogleCalendarUrl, downloadIcs } from "~/lib/calendar-export";
+import { isValidDateFormat, isValidTimeFormat } from "~/lib/validation.server";
 import { CheckCircle, XCircle, Clock, Edit2, RefreshCw, Trash2, Calendar } from "lucide-react";
 
 export async function loader({ params, request, context }: Route.LoaderArgs) {
@@ -82,25 +83,23 @@ export async function action({ params, request, context }: Route.ActionArgs) {
     if (!canManageBookings(user.role)) throw new Response(null, { status: 403 });
     const adminNote = (form.get("admin_note") as string)?.trim() || null;
 
-    // Check for overlap with other approved bookings before approving
-    const conflict = await queryOne<{ n: number }>(
-      env.DB,
-      `SELECT COUNT(*) as n FROM bookings
-       WHERE room_id = ? AND date = ? AND status = 'approved' AND id != ?
-         AND start_time < ? AND end_time > ?`,
-      [booking.room_id, booking.date, bookingId, booking.end_time, booking.start_time]
-    );
-    if ((conflict?.n ?? 0) > 0) {
-      return data({ error: "Nie można zatwierdzić — sala jest już zarezerwowana w tym terminie przez inną rezerwację." }, { status: 409 });
-    }
-
+    // Version check AND room-conflict check folded into one atomic UPDATE —
+    // closes the race window a separate check-then-act would leave open.
     const result = await execute(
       env.DB,
-      `UPDATE bookings SET status='approved', admin_note=?, version=version+1, updated_at=CURRENT_TIMESTAMP
-       WHERE id=? AND version=? AND status IN ('pending','counter_proposed')`,
+      `UPDATE bookings
+       SET status='approved', admin_note=?, version=version+1, updated_at=CURRENT_TIMESTAMP
+       WHERE id=? AND version=? AND status IN ('pending','counter_proposed')
+         AND NOT EXISTS (
+           SELECT 1 FROM bookings b2
+           WHERE b2.room_id = bookings.room_id AND b2.date = bookings.date AND b2.status = 'approved'
+             AND b2.id != bookings.id AND b2.start_time < bookings.end_time AND b2.end_time > bookings.start_time
+         )`,
       [adminNote, bookingId, booking.version]
     );
-    if (!result.meta.changes) return data({ error: "Konflikt — wniosek został już przetworzony." }, { status: 409 });
+    if (!result.meta.changes) {
+      return data({ error: "Konflikt — wniosek został już przetworzony lub termin jest już zajęty. Odśwież stronę." }, { status: 409 });
+    }
 
     await execute(env.DB,
       "INSERT INTO notifications (user_id, booking_id, type) VALUES (?,?,'booking_approved')",
@@ -134,6 +133,15 @@ export async function action({ params, request, context }: Route.ActionArgs) {
     const counterEnd = form.get("counter_end_time") as string;
     const adminNote = (form.get("admin_note") as string)?.trim() || null;
     if (!counterDate || !counterStart || !counterEnd) return data({ error: "Podaj pełny nowy termin." }, { status: 400 });
+    if (!isValidDateFormat(counterDate)) {
+      return data({ error: "Nieprawidłowy format daty." }, { status: 400 });
+    }
+    if (!isValidTimeFormat(counterStart) || !isValidTimeFormat(counterEnd)) {
+      return data({ error: "Nieprawidłowy format godziny." }, { status: 400 });
+    }
+    if (counterStart >= counterEnd) {
+      return data({ error: "Godzina końca musi być późniejsza niż godzina początku." }, { status: 400 });
+    }
 
     const result = await execute(
       env.DB,
@@ -156,26 +164,24 @@ export async function action({ params, request, context }: Route.ActionArgs) {
   else if (_action === "accept_counter") {
     if (booking.requester_id !== user.id) throw new Response(null, { status: 403 });
 
-    // Check the counter-proposed slot hasn't been taken since the counter was made
-    const conflict = await queryOne<{ n: number }>(
-      env.DB,
-      `SELECT COUNT(*) as n FROM bookings
-       WHERE room_id = ? AND date = ? AND status = 'approved' AND id != ?
-         AND start_time < ? AND end_time > ?`,
-      [booking.room_id, booking.counter_date, bookingId, booking.counter_end_time, booking.counter_start_time]
-    );
-    if ((conflict?.n ?? 0) > 0) {
-      return data({ error: "Proponowany termin jest już zajęty. Skontaktuj się z administratorem." }, { status: 409 });
-    }
-
+    // Version check AND room-conflict check (against the counter-proposed
+    // slot) folded into one atomic UPDATE.
     const result = await execute(
       env.DB,
-      `UPDATE bookings SET status='approved', date=counter_date, start_time=counter_start_time, end_time=counter_end_time,
-        counter_date=NULL, counter_start_time=NULL, counter_end_time=NULL, version=version+1, updated_at=CURRENT_TIMESTAMP
-       WHERE id=? AND version=? AND status='counter_proposed'`,
+      `UPDATE bookings
+       SET status='approved', date=counter_date, start_time=counter_start_time, end_time=counter_end_time,
+           counter_date=NULL, counter_start_time=NULL, counter_end_time=NULL, version=version+1, updated_at=CURRENT_TIMESTAMP
+       WHERE id=? AND version=? AND status='counter_proposed'
+         AND NOT EXISTS (
+           SELECT 1 FROM bookings b2
+           WHERE b2.room_id = bookings.room_id AND b2.date = bookings.counter_date AND b2.status = 'approved'
+             AND b2.id != bookings.id AND b2.start_time < bookings.counter_end_time AND b2.end_time > bookings.counter_start_time
+         )`,
       [bookingId, booking.version]
     );
-    if (!result.meta.changes) return data({ error: "Wystąpił błąd — odśwież stronę." }, { status: 409 });
+    if (!result.meta.changes) {
+      return data({ error: "Proponowany termin jest już zajęty lub wystąpił konflikt. Odśwież stronę." }, { status: 409 });
+    }
     await logAction(env.DB, { userId: user.id, action: 'booking.counter_accepted', entityType: 'booking', entityId: bookingId });
   }
 

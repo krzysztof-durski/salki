@@ -1,7 +1,8 @@
 import { data, redirect, Form, Link, useActionData, useNavigation } from "react-router";
 import type { Route } from "./+types/login";
-import { getTokenFromRequest, getSessionUser, verifyPassword, createSession, setSessionCookie } from "~/lib/auth.server";
+import { getTokenFromRequest, getSessionUser, verifyPassword, createSession, setSessionCookie, DUMMY_PASSWORD_HASH } from "~/lib/auth.server";
 import { queryOne } from "~/lib/db.server";
+import { checkRateLimit, recordFailedAttempt, clearAttempts } from "~/lib/rate-limit.server";
 import type { User } from "~/types";
 import { CalendarDays } from "lucide-react";
 
@@ -25,10 +26,27 @@ export async function action({ request, context }: Route.ActionArgs) {
     return data({ error: "Wypełnij wszystkie pola." }, { status: 400 });
   }
 
+  const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown';
+  const bucketKey = `login:${email}:${ip}`;
+
+  const rl = await checkRateLimit(env.DB, bucketKey);
+  if (!rl.allowed) {
+    return data({ error: "Zbyt wiele nieudanych prób logowania. Spróbuj ponownie za kilka minut." }, { status: 429 });
+  }
+
   const user = await queryOne<User>(env.DB, "SELECT * FROM users WHERE email = ? AND is_active = 1", [email]);
-  if (!user || !(await verifyPassword(password, user.password_hash))) {
+  // Always run verifyPassword at equivalent cost, even when the account
+  // doesn't exist, so response timing can't be used to enumerate accounts.
+  const valid = user
+    ? await verifyPassword(password, user.password_hash)
+    : await verifyPassword(password, DUMMY_PASSWORD_HASH);
+
+  if (!user || !valid) {
+    await recordFailedAttempt(env.DB, bucketKey);
     return data({ error: "Nieprawidłowy e-mail lub hasło." }, { status: 401 });
   }
+
+  await clearAttempts(env.DB, bucketKey);
 
   const token = await createSession(env.DB, user.id);
   const headers = new Headers();

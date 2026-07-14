@@ -3,9 +3,10 @@ import type { Route } from "./+types/rezerwacje.nowa";
 import { getTokenFromRequest, getSessionUser, requireUser } from "~/lib/auth.server";
 import { queryAll, queryOne, execute } from "~/lib/db.server";
 import { logAction } from "~/lib/audit.server";
-import { canDirectBookBoardRoom, canDirectBookGeneralRoom } from "~/types";
+import { canDirectBookBoardRoom, canDirectBookGeneralRoom, canViewBoardRooms } from "~/types";
 import type { Room, User } from "~/types";
 import { notifyAdmins } from "~/lib/notify.server";
+import { isValidDateFormat, isValidTimeFormat, isPastDate, parseAttendeeCount } from "~/lib/validation.server";
 
 export async function loader({ request, context }: Route.LoaderArgs) {
   const { env } = context.cloudflare;
@@ -43,18 +44,38 @@ export async function action({ request, context }: Route.ActionArgs) {
   const startTime = form.get("start_time") as string;
   const endTime = form.get("end_time") as string;
   const title = (form.get("title") as string)?.trim() || null;
-  const attendeeCount = form.get("attendee_count") ? parseInt(form.get("attendee_count") as string, 10) : null;
   const requesterNote = (form.get("requester_note") as string)?.trim() || null;
   const notifyReception = form.get("notify_reception") === "on";
 
   if (!roomId || !date || !startTime || !endTime) {
     return data({ error: "Wypełnij wymagane pola." }, { status: 400 });
   }
+  if (!isValidDateFormat(date)) {
+    return data({ error: "Nieprawidłowy format daty." }, { status: 400 });
+  }
+  if (!isValidTimeFormat(startTime) || !isValidTimeFormat(endTime)) {
+    return data({ error: "Nieprawidłowy format godziny." }, { status: 400 });
+  }
   if (startTime >= endTime) {
     return data({ error: "Godzina końca musi być późniejsza niż godzina początku." }, { status: 400 });
   }
+  if (isPastDate(date)) {
+    return data({ error: "Nie można rezerwować sali w przeszłości." }, { status: 400 });
+  }
+  const attendeeResult = parseAttendeeCount(form.get("attendee_count"));
+  if (!attendeeResult.ok) {
+    return data({ error: attendeeResult.error }, { status: 400 });
+  }
+  const attendeeCount = attendeeResult.value;
 
-  // Block if any approved booking already occupies any part of this time slot
+  // Room must exist, be active, and be a category this role can reach at all
+  const room = await queryOne<Room>(env.DB, "SELECT * FROM rooms WHERE id = ? AND is_active = 1", [roomId]);
+  if (!room) return data({ error: "Nieznana sala." }, { status: 400 });
+  if (room.category === 'board' && !canViewBoardRooms(user.role)) {
+    return data({ error: "Brak uprawnień do rezerwacji tej sali." }, { status: 403 });
+  }
+
+  // Fast, friendly early check — not relied on for correctness under races (see atomic INSERT below).
   const overlap = await queryOne<{ n: number }>(
     env.DB,
     `SELECT COUNT(*) as n FROM bookings
@@ -66,25 +87,44 @@ export async function action({ request, context }: Route.ActionArgs) {
     return data({ error: "Ta sala jest już zarezerwowana w wybranym terminie. Wybierz inny czas lub salę." }, { status: 409 });
   }
 
-  // Determine if direct (no approval needed)
-  const room = await queryOne<Room>(env.DB, "SELECT * FROM rooms WHERE id = ?", [roomId]);
-  if (!room) return data({ error: "Nieznana sala." }, { status: 400 });
-
   const isDirect = room.category === 'board'
     ? canDirectBookBoardRoom(user.role)
     : canDirectBookGeneralRoom(user.role);
 
   const status = isDirect ? 'approved' : 'pending';
 
-  const result = await execute(
-    env.DB,
-    `INSERT INTO bookings
-       (room_id, requester_id, created_by_admin_id, title, date, start_time, end_time,
-        attendee_count, status, requester_note)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [roomId, user.id, isDirect ? user.id : null, title, date, startTime, endTime,
-     attendeeCount, status, requesterNote]
-  );
+  let result: D1Result;
+  if (isDirect) {
+    // Atomic: only inserts if no conflicting approved booking exists for this
+    // room/date/time at the moment of the INSERT itself — closes the race
+    // window between the pre-check SELECT above and this write.
+    result = await execute(
+      env.DB,
+      `INSERT INTO bookings
+         (room_id, requester_id, created_by_admin_id, title, date, start_time, end_time, attendee_count, status, requester_note)
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+       WHERE NOT EXISTS (
+         SELECT 1 FROM bookings b2
+         WHERE b2.room_id = ? AND b2.date = ? AND b2.status = 'approved'
+           AND b2.start_time < ? AND b2.end_time > ?
+       )`,
+      [roomId, user.id, user.id, title, date, startTime, endTime, attendeeCount, status, requesterNote,
+       roomId, date, endTime, startTime]
+    );
+    if (!result.meta.changes) {
+      return data({ error: "Ta sala jest już zarezerwowana w wybranym terminie. Wybierz inny czas lub salę." }, { status: 409 });
+    }
+  } else {
+    // Pending requests don't need atomicity: an admin can only approve one
+    // via the atomic UPDATE in rezerwacje.$id.tsx.
+    result = await execute(
+      env.DB,
+      `INSERT INTO bookings
+         (room_id, requester_id, created_by_admin_id, title, date, start_time, end_time, attendee_count, status, requester_note)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [roomId, user.id, null, title, date, startTime, endTime, attendeeCount, status, requesterNote]
+    );
+  }
 
   const bookingId = result.meta.last_row_id as number;
 
