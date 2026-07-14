@@ -268,6 +268,19 @@ export default function Regulamin() {
                 </tr>
                 <tr>
                   <td className="px-3 py-2">
+                    Adresy IP i adresy e-mail przy próbach logowania
+                  </td>
+                  <td className="px-3 py-2">
+                    Wykrywanie i blokowanie prób nieautoryzowanego dostępu
+                    (ograniczanie liczby prób logowania)
+                  </td>
+                  <td className="px-3 py-2">
+                    Art. 6 ust. 1 lit. f RODO — uzasadniony interes
+                    administratora
+                  </td>
+                </tr>
+                <tr>
+                  <td className="px-3 py-2">
                     Token sesji obserwatora (dostęp na wspólne hasło, bez
                     konta i danych osobowych osoby przeglądającej)
                   </td>
@@ -327,6 +340,14 @@ export default function Regulamin() {
                   <td className="px-3 py-2">Tokeny sesji</td>
                   <td className="px-3 py-2">
                     Do momentu wylogowania lub wygaśnięcia sesji
+                  </td>
+                </tr>
+                <tr>
+                  <td className="px-3 py-2">
+                    Adresy IP i adresy e-mail z prób logowania
+                  </td>
+                  <td className="px-3 py-2">
+                    Do 24 godzin, następnie usuwane automatycznie
                   </td>
                 </tr>
                 <tr>
