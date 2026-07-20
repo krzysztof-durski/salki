@@ -1,7 +1,7 @@
 import { data, redirect, Form, Link, useActionData, useNavigation } from "react-router";
 import type { Route } from "./+types/login";
 import { getTokenFromRequest, getSessionUser, verifyPassword, createSession, setSessionCookie, DUMMY_PASSWORD_HASH } from "~/lib/auth.server";
-import { queryOne } from "~/lib/db.server";
+import { queryOne, execute } from "~/lib/db.server";
 import { checkRateLimit, recordFailedAttempt, clearAttempts } from "~/lib/rate-limit.server";
 import type { User } from "~/types";
 import { CalendarDays } from "lucide-react";
@@ -49,6 +49,9 @@ export async function action({ request, context }: Route.ActionArgs) {
   await clearAttempts(env.DB, bucketKey);
 
   const token = await createSession(env.DB, user.id);
+  // Snooze semantics: any admin who muted email notifications gets them
+  // re-enabled on next login (they can only "snooze," not permanently mute).
+  await execute(env.DB, "UPDATE users SET email_notifications_enabled=1, updated_at=CURRENT_TIMESTAMP WHERE id=?", [user.id]);
   const headers = new Headers();
   headers.set("Set-Cookie", setSessionCookie(token, request));
 
