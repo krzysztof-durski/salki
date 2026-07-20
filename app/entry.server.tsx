@@ -20,9 +20,10 @@ export default async function handleRequest(
 
   const body = await renderToReadableStream(
     <NonceContext.Provider value={nonce}>
-      <ServerRouter context={routerContext} url={request.url} />
+      <ServerRouter context={routerContext} url={request.url} nonce={nonce} />
     </NonceContext.Provider>,
     {
+      nonce,
       signal: request.signal,
       onError(error: unknown) {
         console.error(error);
