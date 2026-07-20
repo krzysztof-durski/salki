@@ -24,9 +24,17 @@ export interface User {
   admin_can_assign_zarzad: number;
   admin_can_assign_pracownik: number;
   admin_can_manage_rooms: number;
+  email_notifications_enabled: number;
   created_at: string;
   updated_at: string;
 }
+
+export type AdminNotificationType =
+  | 'zarzad_created'
+  | 'zarzad_edited'
+  | 'booking_requested'
+  | 'change_requested'
+  | 'note_changed';
 
 export interface Room {
   id: number;
