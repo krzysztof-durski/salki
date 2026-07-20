@@ -8,3 +8,7 @@ SMTP_PORT=587
 SMTP_USER=twoj@adres.pl
 SMTP_PASS=twoje-haslo-smtp
 SMTP_FROM=salki@lafrentz.pl
+
+RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxxxxxxxx
+RESEND_FROM_EMAIL=salki@lafrentz.pl
+APP_BASE_URL=http://localhost:5173

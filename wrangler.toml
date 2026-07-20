@@ -10,4 +10,5 @@ database_id = "1a3ed8eb-432a-4107-85dc-1533db633ede"
 jurisdiction = "eu"
 
 # Secrets managed via Cloudflare Pages dashboard:
-# SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM, SESSION_SECRET
+# SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM, SESSION_SECRET,
+# RESEND_API_KEY, RESEND_FROM_EMAIL, APP_BASE_URL
