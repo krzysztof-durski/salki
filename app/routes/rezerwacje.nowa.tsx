@@ -138,10 +138,10 @@ export async function action({ request, context }: Route.ActionArgs) {
   });
 
   if (user.role === 'zarzad' && isDirect && notifyReception) {
-    await notifyAdmins(env.DB, bookingId, 'zarzad_created');
+    await notifyAdmins(env, bookingId, 'zarzad_created');
   }
   if (!isDirect) {
-    await notifyAdmins(env.DB, bookingId, 'booking_requested');
+    await notifyAdmins(env, bookingId, 'booking_requested');
   }
 
   return redirect(`/rezerwacje/${bookingId}`);

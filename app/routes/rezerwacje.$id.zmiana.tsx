@@ -204,7 +204,7 @@ export async function action({ params, request, context }: Route.ActionArgs) {
     });
 
     if (user.role === 'zarzad' && notifyReception) {
-      await notifyAdmins(env.DB, bookingId, 'zarzad_edited');
+      await notifyAdmins(env, bookingId, 'zarzad_edited');
     }
 
     return redirect(`/rezerwacje/${bookingId}`);
@@ -293,7 +293,7 @@ export async function action({ params, request, context }: Route.ActionArgs) {
       details: { oldTitle: booking.title, newTitle },
     });
     if (hasNoteChange) {
-      await notifyAdmins(env.DB, bookingId, 'note_changed', JSON.stringify(notifDetails));
+      await notifyAdmins(env, bookingId, 'note_changed', JSON.stringify(notifDetails));
     }
     return redirect(`/rezerwacje/${bookingId}`);
   }
@@ -320,7 +320,7 @@ export async function action({ params, request, context }: Route.ActionArgs) {
       entityType: 'booking',
       entityId: bookingId,
     });
-    await notifyAdmins(env.DB, bookingId, 'change_requested', JSON.stringify(notifDetails));
+    await notifyAdmins(env, bookingId, 'change_requested', JSON.stringify(notifDetails));
   } else {
     // Note-only change
     await logAction(env.DB, {
@@ -329,7 +329,7 @@ export async function action({ params, request, context }: Route.ActionArgs) {
       entityType: 'booking',
       entityId: bookingId,
     });
-    await notifyAdmins(env.DB, bookingId, 'note_changed', JSON.stringify(notifDetails));
+    await notifyAdmins(env, bookingId, 'note_changed', JSON.stringify(notifDetails));
   }
 
   return redirect(`/rezerwacje/${bookingId}`);
