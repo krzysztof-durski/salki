@@ -19,12 +19,19 @@ const handler = createPagesFunctionHandler({
 // hydration scripts (Scripts/ScrollRestoration) are allowed to run.
 // Overwriting it with a static, nonce-less value here would block those
 // scripts again — CSP headers combine restrictively, not additively.
+//
+// Cache-Control is included for the same reason the security headers are:
+// the equivalent rule in public/_headers (for "/" and "/*.html") never
+// actually applies, since every request is served by this Function. Without
+// this, HTML responses carry no Cache-Control header at all, so a browser
+// (or intermediate cache) can hold onto a stale, pre-deploy page indefinitely.
 const SECURITY_HEADERS: Record<string, string> = {
   "X-Frame-Options": "DENY",
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "strict-origin-when-cross-origin",
   "Permissions-Policy": "geolocation=(), camera=(), microphone=(), payment=(), usb=()",
   "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
+  "Cache-Control": "no-cache, must-revalidate",
 };
 
 export const onRequest: PagesFunction<CloudflareEnv> = async (context) => {
