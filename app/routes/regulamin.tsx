@@ -80,6 +80,13 @@ export default function Regulamin() {
               złożenia wniosku o zmianę i jego zatwierdzenia przez
               administratora.
             </li>
+            <li>
+              Administratorzy mogą otrzymywać powiadomienia e-mail o nowych
+              wnioskach o rezerwację oraz o zmianach zatwierdzonych
+              rezerwacji. Funkcję tę można tymczasowo wyłączyć w
+              Ustawieniach — wyłączenie obowiązuje wyłącznie do
+              najbliższego zalogowania.
+            </li>
           </ul>
         </div>
 
@@ -218,6 +225,20 @@ export default function Regulamin() {
                   </td>
                   <td className="px-3 py-2">
                     Art. 6 ust. 1 lit. b RODO — wykonanie umowy
+                  </td>
+                </tr>
+                <tr>
+                  <td className="px-3 py-2">
+                    Służbowy adres e-mail administratora systemu
+                  </td>
+                  <td className="px-3 py-2">
+                    Wysyłka powiadomień e-mail o nowych wnioskach o
+                    rezerwację i zmianach (funkcję można tymczasowo
+                    wyłączyć w Ustawieniach)
+                  </td>
+                  <td className="px-3 py-2">
+                    Art. 6 ust. 1 lit. f RODO — uzasadniony interes
+                    administratora
                   </td>
                 </tr>
                 <tr>
@@ -379,7 +400,39 @@ export default function Regulamin() {
               cloudflare.com/privacypolicy
             </a>
             . Dane nie są przekazywane innym podmiotom zewnętrznym ani
-            wykorzystywane w celach marketingowych.
+            wykorzystywane w celach marketingowych, z wyjątkiem sytuacji
+            opisanych poniżej.
+          </p>
+          <p className="text-sm text-gray-600">
+            Powiadomienia e-mail o nowych wnioskach o rezerwację i zmianach
+            są wysyłane administratorom systemu za pośrednictwem usługi{" "}
+            <strong>Resend</strong> (Plus Five Five, Inc., USA). Do Resend
+            przekazywany jest adres e-mail administratora-odbiorcy oraz
+            treść wiadomości (nazwa sali, data, godziny, imię i nazwisko
+            osoby zgłaszającej, tytuł spotkania oraz ewentualne uwagi do
+            rezerwacji). Przekazanie danych do USA odbywa się na podstawie
+            standardowych klauzul umownych (SCC) zawartych w Data
+            Processing Addendum Resend, zgodnie z art. 46 ust. 2 lit. c
+            RODO. Funkcję powiadomień e-mail można wyłączyć indywidualnie
+            w Ustawieniach. Polityka prywatności Resend:{" "}
+            <a
+              href="https://resend.com/legal/privacy-policy"
+              target="_blank"
+              rel="noreferrer"
+              className="text-blue-600 hover:underline"
+            >
+              resend.com/legal/privacy-policy
+            </a>
+            , Data Processing Addendum:{" "}
+            <a
+              href="https://resend.com/legal/dpa"
+              target="_blank"
+              rel="noreferrer"
+              className="text-blue-600 hover:underline"
+            >
+              resend.com/legal/dpa
+            </a>
+            .
           </p>
           <p className="text-sm text-gray-600">
             Wyjątkiem jest opcjonalna, dobrowolna funkcja „Dodaj do
@@ -462,7 +515,7 @@ export default function Regulamin() {
       </section>
 
       <p className="text-xs text-gray-400">
-        Dokument zaktualizowany: 2026-07-06
+        Dokument zaktualizowany: 2026-07-20
       </p>
       </div>
     </div>
