@@ -61,6 +61,13 @@ export async function action({ request, context }: Route.ActionArgs) {
     return redirect("/ustawienia?ok=1");
   }
 
+  if (_action === "toggle_email_notifications") {
+    if (user.role !== 'admin') throw new Response(null, { status: 403 });
+    const enabled = form.get("email_notifications_enabled") === "on" ? 1 : 0;
+    await execute(env.DB, "UPDATE users SET email_notifications_enabled=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", [enabled, user.id]);
+    return redirect("/ustawienia?ok=1");
+  }
+
   return null;
 }
 
@@ -102,6 +109,7 @@ export default function Ustawienia({ loaderData, actionData }: Route.ComponentPr
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Nowe hasło</label>
             <input name="new_password" type="password" autoComplete="new-password" required minLength={8} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+            <p className="mt-1 text-xs text-gray-500">Hasło musi mieć co najmniej 8 znaków.</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Powtórz nowe hasło</label>
@@ -133,6 +141,33 @@ export default function Ustawienia({ loaderData, actionData }: Route.ComponentPr
                 <option key={r.id} value={r.id}>{r.name}</option>
               ))}
             </select>
+            <button type="submit" disabled={pending} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg">
+              Zapisz
+            </button>
+          </Form>
+        </div>
+      )}
+
+      {/* Email notifications (admins only) */}
+      {!forcePasswordChange && user.role === 'admin' && (
+        <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm space-y-4">
+          <h2 className="font-semibold text-gray-900">Powiadomienia e-mail</h2>
+          <p className="text-sm text-gray-500">
+            Otrzymuj e-mail, gdy pojawi się nowy wniosek o rezerwację lub o zmianę.
+            Wyłączenie działa tylko do najbliższego zalogowania — potem włączy się
+            ponownie automatycznie.
+          </p>
+          <Form method="post" className="flex items-center gap-3">
+            <input type="hidden" name="_action" value="toggle_email_notifications" />
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                name="email_notifications_enabled"
+                defaultChecked={user.email_notifications_enabled === 1}
+                className="rounded border-gray-300"
+              />
+              Powiadomienia e-mail włączone
+            </label>
             <button type="submit" disabled={pending} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg">
               Zapisz
             </button>
