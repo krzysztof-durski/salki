@@ -1,6 +1,6 @@
 import { data, redirect, Form, Link, useActionData, useNavigation } from "react-router";
 import type { Route } from "./+types/login";
-import { getTokenFromRequest, getSessionUser, verifyPassword, createSession, setSessionCookie, DUMMY_PASSWORD_HASH } from "~/lib/auth.server";
+import { getTokenFromRequest, getSessionUser, verifyPassword, createSession, setSessionCookie, DUMMY_PASSWORD_HASH, isSafeRedirectTarget } from "~/lib/auth.server";
 import { queryOne, execute } from "~/lib/db.server";
 import { checkRateLimit, recordFailedAttempt, clearAttempts } from "~/lib/rate-limit.server";
 import type { User } from "~/types";
@@ -10,10 +10,12 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const { env } = context.cloudflare;
   const token = getTokenFromRequest(request);
   const user = await getSessionUser(env.DB, token);
-  if (user) return redirect("/");
+  const redirectToParam = new URL(request.url).searchParams.get("redirectTo");
+  const redirectTo = redirectToParam && isSafeRedirectTarget(redirectToParam) ? redirectToParam : null;
+  if (user) return redirect(redirectTo ?? "/");
 
   const observerSettings = await queryOne<{ is_enabled: number }>(env.DB, "SELECT is_enabled FROM observer_settings WHERE id = 1");
-  return { observerEnabled: observerSettings?.is_enabled === 1 };
+  return { observerEnabled: observerSettings?.is_enabled === 1, redirectTo };
 }
 
 export async function action({ request, context }: Route.ActionArgs) {
@@ -21,6 +23,8 @@ export async function action({ request, context }: Route.ActionArgs) {
   const form = await request.formData();
   const email = (form.get("email") as string)?.trim().toLowerCase();
   const password = form.get("password") as string;
+  const redirectToRaw = form.get("redirectTo") as string | null;
+  const redirectTo = redirectToRaw && isSafeRedirectTarget(redirectToRaw) ? redirectToRaw : null;
 
   if (!email || !password) {
     return data({ error: "Wypełnij wszystkie pola." }, { status: 400 });
@@ -58,11 +62,11 @@ export async function action({ request, context }: Route.ActionArgs) {
   if (user.must_change_password) {
     return redirect("/ustawienia?zmien-haslo=1", { headers });
   }
-  return redirect("/", { headers });
+  return redirect(redirectTo ?? "/", { headers });
 }
 
 export default function Login({ loaderData, actionData }: Route.ComponentProps) {
-  const { observerEnabled } = loaderData;
+  const { observerEnabled, redirectTo } = loaderData;
   const nav = useNavigation();
   const pending = nav.state === "submitting";
 
@@ -76,6 +80,7 @@ export default function Login({ loaderData, actionData }: Route.ComponentProps) 
         <h1 className="text-xl font-semibold text-gray-900 mb-6 text-center">Logowanie</h1>
 
         <Form method="post" className="space-y-4">
+          {redirectTo && <input type="hidden" name="redirectTo" value={redirectTo} />}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="email">
               Adres e-mail

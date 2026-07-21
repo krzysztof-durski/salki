@@ -35,7 +35,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   try {
   const { env } = context.cloudflare;
   const token = getTokenFromRequest(request);
-  const user = requireUser(await getSessionUser(env.DB, token));
+  const user = requireUser(await getSessionUser(env.DB, token), request);
 
   if (user.must_change_password) {
     const url = new URL(request.url);

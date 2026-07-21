@@ -4,6 +4,7 @@ import { getObserverTokenFromRequest, getObserverSession, requireObserverSession
 import { queryAll, queryOne } from "~/lib/db.server";
 import type { Room, Booking, BookingStatus } from "~/types";
 import CalendarView from "~/components/CalendarView";
+import { usePollingRevalidation } from "~/hooks/usePollingRevalidation";
 
 interface ObserverBookingRow {
   id: number;
@@ -92,6 +93,9 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 
 export default function ObserwatorKalendarz({ loaderData }: Route.ComponentProps) {
   const { rooms, bookings, activeRoomId, weekStart } = loaderData;
+  // This runs as an unattended kiosk display, so keep it fresh more
+  // aggressively than the logged-in views (10s vs the default 20s).
+  usePollingRevalidation(10_000);
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-gray-50">

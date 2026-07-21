@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router";
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useMemo } from "react";
 import { ChevronLeft, ChevronRight, Star, Plus, CalendarPlus } from "lucide-react";
 import type { Room, Booking, User } from "~/types";
 import { isAdmin } from "~/types";
@@ -63,6 +63,24 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
   const activeRoom = rooms.find(r => r.id === activeRoomId) ?? rooms[0];
   const roomBookings = bookings.filter(b => b.room_id === activeRoomId);
 
+  // Per-room "needs action" counts for the room-tab badges — admins need to
+  // confirm/reject pending requests, requesters need to accept/reject a
+  // counter-offer made on their own booking. Derived straight from the
+  // already-loaded bookings, so it updates for free whenever the page
+  // revalidates (see usePollingRevalidation) without a dedicated endpoint.
+  const actionRequiredCounts = useMemo(() => {
+    const counts: Record<number, number> = {};
+    if (!user) return counts;
+    const admin = isAdmin(user.role);
+    for (const b of bookings) {
+      const needsAction = admin
+        ? b.status === 'pending'
+        : b.requester_id === user.id && b.status === 'counter_proposed';
+      if (needsAction) counts[b.room_id] = (counts[b.room_id] ?? 0) + 1;
+    }
+    return counts;
+  }, [bookings, user]);
+
   function goToWeek(offset: number) {
     const d = new Date(weekStart);
     d.setDate(d.getDate() + offset * 7);
@@ -76,6 +94,38 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
   function openNewBooking(date: string, startTime: string, endTime: string) {
     if (readOnly) return;
     navigate(`/rezerwacje/nowa?sala=${activeRoomId}&data=${date}&od=${startTime}&do=${endTime}`);
+  }
+
+  // A slot counts as past only once it has fully elapsed (its end time, not
+  // its start time) — the slot "now" falls inside is still bookable, just
+  // starting immediately rather than at the slot's nominal grid boundary.
+  function isSlotPast(dayIndex: number, slot: number): boolean {
+    const date = weekDates[dayIndex];
+    const today = todayString();
+    if (date !== today) return date < today;
+    return (START_HOUR * 60 + (slot + 1) * SLOT_MINUTES) <= nowMinutes;
+  }
+
+  // A slot's nominal grid start time, unless that's already elapsed — in
+  // which case a booking can still be made starting right now (matches the
+  // server-side isPastDateTime check in validation.server.ts).
+  function effectiveSlotStartTime(dayIndex: number, slot: number): string {
+    const nominal = slotToTime(slot);
+    if (weekDates[dayIndex] !== todayString()) return nominal;
+    const slotStartMinutes = START_HOUR * 60 + slot * SLOT_MINUTES;
+    if (slotStartMinutes >= nowMinutes) return nominal;
+    const h = Math.floor(nowMinutes / 60);
+    const m = nowMinutes % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }
+
+  // Height (px) of the grayed-out past region at the top of a day column.
+  function pastOverlayHeight(date: string): number {
+    const today = todayString();
+    if (date < today) return TOTAL_SLOTS * SLOT_HEIGHT;
+    if (date > today) return 0;
+    const elapsedSlots = Math.max(0, Math.min(TOTAL_SLOTS, (nowMinutes - START_HOUR * 60) / SLOT_MINUTES));
+    return elapsedSlots * SLOT_HEIGHT;
   }
 
   function isRangeOccupied(dayIndex: number, loSlot: number, hiSlot: number): boolean {
@@ -106,6 +156,7 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
   function handleMouseDown(dayIndex: number, e: React.MouseEvent<HTMLDivElement>) {
     if (readOnly || e.button !== 0) return;
     const slot = slotFromClientY(e.currentTarget, e.clientY);
+    if (isSlotPast(dayIndex, slot)) return;
     setHoverState(null);
     setDragState({ dayIndex, startSlot: slot, endSlot: slot, active: true });
     e.preventDefault();
@@ -131,12 +182,14 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
     setDragState(null);
     const lo = Math.min(startSlot, endSlot);
     const hi = Math.max(startSlot, endSlot);
+    if (isSlotPast(dayIndex, lo)) return;
     if (isRangeOccupied(dayIndex, lo, hi)) return;
+    const start = effectiveSlotStartTime(dayIndex, lo);
     if (lo === hi) {
       // single click — open with 1-hour default
-      openNewBooking(weekDates[dayIndex], slotToTime(lo), slotToTime(Math.min(lo + 2, TOTAL_SLOTS)));
+      openNewBooking(weekDates[dayIndex], start, slotToTime(Math.min(lo + 2, TOTAL_SLOTS)));
     } else {
-      openNewBooking(weekDates[dayIndex], slotToTime(lo), slotToTime(hi + 1));
+      openNewBooking(weekDates[dayIndex], start, slotToTime(hi + 1));
     }
   }
 
@@ -145,6 +198,7 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
   function handleColumnMouseMove(dayIndex: number, e: React.MouseEvent<HTMLDivElement>) {
     if (readOnly || dragState?.active) return;
     const slot = slotFromClientY(e.currentTarget, e.clientY);
+    if (isSlotPast(dayIndex, slot)) { setHoverState(null); return; }
     setHoverState({ dayIndex, slot });
   }
 
@@ -154,25 +208,36 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
     <div className="calendar-scope flex flex-col h-full overflow-hidden">
       {/* Room tabs */}
       <div className="flex items-center gap-1 px-4 pt-3 pb-0 border-b border-gray-200 bg-white overflow-x-auto shrink-0">
-        {rooms.map(room => (
-          <button
-            key={room.id}
-            onClick={() => switchRoom(room.id)}
-            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
-              room.id === activeRoomId
-                ? "border-blue-600 text-blue-700"
-                : "border-transparent text-gray-500 hover:text-gray-800 hover:border-gray-300"
-            }`}
-          >
-            {room.name}
-            {room.id === user?.preferred_room_id && (
-              <Star size={12} className="fill-yellow-400 text-yellow-400" />
-            )}
-            {room.category === 'board' && (
-              <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">Zarząd</span>
-            )}
-          </button>
-        ))}
+        {rooms.map(room => {
+          const actionCount = actionRequiredCounts[room.id] ?? 0;
+          return (
+            <button
+              key={room.id}
+              onClick={() => switchRoom(room.id)}
+              className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+                room.id === activeRoomId
+                  ? "border-blue-600 text-blue-700"
+                  : "border-transparent text-gray-500 hover:text-gray-800 hover:border-gray-300"
+              }`}
+            >
+              {room.name}
+              {room.id === user?.preferred_room_id && (
+                <Star size={12} className="fill-yellow-400 text-yellow-400" />
+              )}
+              {room.category === 'board' && (
+                <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">Zarząd</span>
+              )}
+              {actionCount > 0 && (
+                <span
+                  className="nav-blink bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[1.1rem] text-center leading-none"
+                  title="Wymaga Twojej reakcji"
+                >
+                  {actionCount}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* Week navigation */}
@@ -211,15 +276,41 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
       </div>
 
       {/* Calendar grid */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-col flex-1 overflow-hidden">
+        {/* Day header row — lives outside the scrolling area on purpose.
+            position: sticky headers nested inside the scroll container used
+            to clip the day columns' background/border to whatever was in the
+            initial viewport once you scrolled (a Chromium layer-compositing
+            bug), so the header is now a plain fixed row instead. */}
+        <div className="flex shrink-0">
+          <div className="w-14 shrink-0 bg-white border-r border-gray-400 h-11" />
+          <div className="flex flex-1">
+            {weekDates.map((date, dayIndex) => {
+              const notLast = dayIndex < weekDates.length - 1;
+              return (
+                <div
+                  key={date}
+                  className={`flex-1 min-w-0 h-11 text-center py-1 border-b border-gray-100 ${notLast ? 'border-r border-gray-400' : ''} ${isToday(date) ? 'bg-blue-100/60' : 'bg-white'}`}
+                >
+                  <p className={`text-xs font-medium ${isToday(date) ? 'text-blue-700' : 'text-gray-500'}`}>
+                    {DAYS_SHORT[dayIndex]}
+                  </p>
+                  <p className={`text-sm font-semibold ${isToday(date) ? 'text-blue-700' : 'text-gray-900'}`}>
+                    {new Date(date + 'T12:00:00').getDate()}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         <div
           className="flex flex-1 overflow-y-auto overflow-x-hidden select-none"
           onMouseMove={handleOuterMouseMove}
           onMouseLeave={() => { setDragState(null); setHoverState(null); }}
         >
           {/* Time gutter — inside scroll container so labels move with grid lines */}
-          <div className="w-14 shrink-0 bg-white border-r border-gray-400 min-h-full">
-            <div className="sticky top-0 h-11 bg-white border-b border-gray-100 z-20" />
+          <div className="relative w-14 shrink-0 bg-white min-h-full">
             {Array.from({ length: TOTAL_SLOTS }).map((_, i) => {
               const minutes = (START_HOUR * 60) + i * SLOT_MINUTES;
               if (minutes % 60 !== 0) return <div key={i} style={{ height: SLOT_HEIGHT }} />;
@@ -229,6 +320,15 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
                 </div>
               );
             })}
+            {/* Divider to the day grid — built from small per-slot segments,
+                not one tall border, because a single hairline border spanning
+                the whole scrollable height silently stops repainting past the
+                initially-rendered viewport in some browsers (a known
+                composited-scroll under-invalidation bug). Small absolutely
+                positioned segments, like the grid lines below, don't trigger it. */}
+            {Array.from({ length: TOTAL_SLOTS }).map((_, i) => (
+              <div key={`gutter-div-${i}`} className="absolute right-0 w-px bg-gray-400" style={{ top: i * SLOT_HEIGHT, height: SLOT_HEIGHT }} />
+            ))}
           </div>
 
           {/* Day columns */}
@@ -251,24 +351,11 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
             const notLast = dayIndex < weekDates.length - 1;
 
             return (
-              <div
-                key={date}
-                className={`flex-1 min-w-0 relative ${isToday(date) ? 'bg-blue-50/40' : ''}`}
-              >
-                {/* Day header */}
-                <div className={`sticky top-0 z-10 h-11 text-center py-1 border-b border-gray-100 ${notLast ? 'border-r border-gray-400' : ''} ${isToday(date) ? 'bg-blue-100/60' : 'bg-white'}`}>
-                  <p className={`text-xs font-medium ${isToday(date) ? 'text-blue-700' : 'text-gray-500'}`}>
-                    {DAYS_SHORT[dayIndex]}
-                  </p>
-                  <p className={`text-sm font-semibold ${isToday(date) ? 'text-blue-700' : 'text-gray-900'}`}>
-                    {new Date(date + 'T12:00:00').getDate()}
-                  </p>
-                </div>
-
-                {/* Slot grid — ref stored for accurate Y-to-slot conversion */}
+                // Slot grid — ref stored for accurate Y-to-slot conversion
                 <div
+                  key={date}
                   ref={el => { slotGridRefs.current[dayIndex] = el; }}
-                  className={`relative ${notLast ? 'border-r border-gray-400' : ''}`}
+                  className={`relative flex-1 min-w-0 ${isToday(date) ? 'bg-blue-50/40' : ''}`}
                   style={{ height: TOTAL_SLOTS * SLOT_HEIGHT }}
                   onMouseDown={e => handleMouseDown(dayIndex, e)}
                   onMouseUp={() => handleMouseUp(dayIndex)}
@@ -283,6 +370,20 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
                       style={{ top: i * SLOT_HEIGHT }}
                     />
                   ))}
+
+                  {/* Right divider — small per-slot segments, see note on the
+                      time gutter's divider for why not one continuous border. */}
+                  {notLast && Array.from({ length: TOTAL_SLOTS }).map((_, i) => (
+                    <div key={`div-${i}`} className="absolute right-0 w-px bg-gray-400" style={{ top: i * SLOT_HEIGHT, height: SLOT_HEIGHT }} />
+                  ))}
+
+                  {/* Past-time overlay — visually marks slots that can no longer be booked */}
+                  {pastOverlayHeight(date) > 0 && (
+                    <div
+                      className="absolute left-0 right-0 top-0 bg-gray-200/50 pointer-events-none z-[1]"
+                      style={{ height: pastOverlayHeight(date) }}
+                    />
+                  )}
 
                   {/* Current time line — only on today's column */}
                   {isToday(date) && nowMinutes >= START_HOUR * 60 && nowMinutes <= END_HOUR * 60 && (
@@ -309,7 +410,7 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
                     >
                       <div className="h-full rounded-md bg-blue-50 border-2 border-blue-300 border-dashed flex flex-col justify-between px-1.5 py-1 overflow-hidden">
                         <span className="text-[11px] font-semibold text-blue-600 leading-none">
-                          {slotToTime(hoverSlot)}
+                          {effectiveSlotStartTime(dayIndex, hoverSlot)}
                         </span>
                         <span className="text-[10px] text-blue-400 self-end leading-none">
                           {slotToTime(previewEnd)}
@@ -329,7 +430,7 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
                     >
                       <div className="h-full rounded-md bg-blue-200 border-2 border-blue-500 flex flex-col justify-between px-1.5 py-1 overflow-hidden">
                         <span className="text-[11px] font-semibold text-blue-800 leading-none">
-                          {slotToTime(Math.min(dragState.startSlot, dragState.endSlot))}
+                          {effectiveSlotStartTime(dayIndex, Math.min(dragState.startSlot, dragState.endSlot))}
                         </span>
                         <span className="text-[10px] text-blue-700 self-end leading-none">
                           {slotToTime(Math.min(Math.max(dragState.startSlot, dragState.endSlot) + 1, TOTAL_SLOTS))}
@@ -353,7 +454,6 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
                     />
                   ))}
                 </div>
-              </div>
             );
           })}
           </div>

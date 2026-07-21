@@ -4,6 +4,7 @@ import { getTokenFromRequest, getSessionUser, requireUser } from "~/lib/auth.ser
 import { queryAll } from "~/lib/db.server";
 import { canManageBookings } from "~/types";
 import type { Booking, BookingChangeRequest } from "~/types";
+import { usePollingRevalidation } from "~/hooks/usePollingRevalidation";
 import { Clock, RefreshCw } from "lucide-react";
 
 export async function loader({ request, context }: Route.LoaderArgs) {
@@ -41,6 +42,7 @@ const STATUS_COLORS: Record<string, string> = { pending: 'bg-amber-100 text-ambe
 
 export default function AdminRezerwacje({ loaderData }: Route.ComponentProps) {
   const { pendingBookings, pendingChanges } = loaderData;
+  usePollingRevalidation();
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8 space-y-8">

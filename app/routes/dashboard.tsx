@@ -5,6 +5,7 @@ import { queryAll } from "~/lib/db.server";
 import { canViewBoardRooms, isAdmin } from "~/types";
 import type { Room, Booking } from "~/types";
 import CalendarView from "~/components/CalendarView";
+import { usePollingRevalidation } from "~/hooks/usePollingRevalidation";
 
 export async function loader({ request, context }: Route.LoaderArgs) {
   const { env } = context.cloudflare;
@@ -80,6 +81,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 
 export default function Dashboard({ loaderData }: Route.ComponentProps) {
   const { user, rooms, bookings, activeRoomId, weekStart } = loaderData;
+  usePollingRevalidation();
 
   return (
     <div className="flex flex-col h-full overflow-hidden">

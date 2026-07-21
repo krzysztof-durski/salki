@@ -3,9 +3,10 @@ import type { Route } from "./+types/rezerwacje.$id.edytuj";
 import { getTokenFromRequest, getSessionUser, requireUser } from "~/lib/auth.server";
 import { queryOne, queryAll, execute } from "~/lib/db.server";
 import { logAction } from "~/lib/audit.server";
+import { notifyRequester } from "~/lib/notify.server";
 import { isAdmin } from "~/types";
 import type { Booking, Room } from "~/types";
-import { isValidDateFormat, isValidTimeFormat, parseAttendeeCount } from "~/lib/validation.server";
+import { isValidDateFormat, isValidTimeFormat, isPastDateTime, parseAttendeeCount } from "~/lib/validation.server";
 
 export async function loader({ params, request, context }: Route.LoaderArgs) {
   const { env } = context.cloudflare;
@@ -55,9 +56,9 @@ export async function action({ params, request, context }: Route.ActionArgs) {
   const bookingId = parseInt(params.id as string, 10);
   const adminUser = isAdmin(user.role);
 
-  const booking = await queryOne<Booking & { requester_email: string }>(
+  const booking = await queryOne<Booking & { requester_email: string; room_name: string }>(
     env.DB,
-    `SELECT b.*, u.email as requester_email FROM bookings b JOIN users u ON u.id=b.requester_id WHERE b.id=?`,
+    `SELECT b.*, u.email as requester_email, r.name as room_name FROM bookings b JOIN users u ON u.id=b.requester_id JOIN rooms r ON r.id=b.room_id WHERE b.id=?`,
     [bookingId]
   );
   if (!booking) throw new Response(null, { status: 404 });
@@ -76,6 +77,9 @@ export async function action({ params, request, context }: Route.ActionArgs) {
   if (startTime >= endTime) {
     return data({ error: "Godzina końca musi być późniejsza niż godzina początku." }, { status: 400 });
   }
+  if (isPastDateTime(date, startTime)) {
+    return data({ error: "Nie można rezerwować terminów w przeszłości." }, { status: 400 });
+  }
   const attendeeResult = parseAttendeeCount(form.get("attendee_count"));
   if (!attendeeResult.ok) {
     return data({ error: attendeeResult.error }, { status: 400 });
@@ -84,10 +88,12 @@ export async function action({ params, request, context }: Route.ActionArgs) {
 
   // Admin-supplied room must exist and be active
   let targetRoomId = booking.room_id;
+  let targetRoomName = booking.room_name;
   if (adminUser && roomId) {
-    const targetRoom = await queryOne<{ id: number }>(env.DB, "SELECT id FROM rooms WHERE id = ? AND is_active = 1", [roomId]);
+    const targetRoom = await queryOne<{ id: number; name: string }>(env.DB, "SELECT id, name FROM rooms WHERE id = ? AND is_active = 1", [roomId]);
     if (!targetRoom) return data({ error: "Nieprawidłowa lub nieaktywna sala." }, { status: 400 });
     targetRoomId = targetRoom.id;
+    targetRoomName = targetRoom.name;
   }
 
   if (adminUser) {
@@ -111,6 +117,25 @@ export async function action({ params, request, context }: Route.ActionArgs) {
     );
     if (!result.meta.changes) {
       return data({ error: "Konflikt — ktoś inny zmodyfikował tę rezerwację, lub termin jest już zajęty. Odśwież i spróbuj ponownie." }, { status: 409 });
+    }
+
+    // "Already confirmed reservation changed by admin" only applies when the
+    // booking was already approved before this edit — a pending request
+    // being edited isn't a confirmed-then-changed event.
+    if (booking.status === 'approved') {
+      const diff: Record<string, { from: unknown; to: unknown }> = {};
+      if (targetRoomId !== booking.room_id) diff.room = { from: booking.room_name, to: targetRoomName };
+      if (date !== booking.date) diff.date = { from: booking.date, to: date };
+      if (startTime !== booking.start_time || endTime !== booking.end_time) {
+        diff.hours = { from: `${booking.start_time}–${booking.end_time}`, to: `${startTime}–${endTime}` };
+      }
+      if ((title ?? null) !== (booking.title ?? null)) diff.title = { from: booking.title, to: title };
+      if (attendeeCount !== booking.attendee_count) diff.attendees = { from: booking.attendee_count, to: attendeeCount };
+      if ((requesterNote ?? null) !== (booking.requester_note ?? null)) diff.note = { from: booking.requester_note, to: requesterNote };
+
+      if (Object.keys(diff).length > 0) {
+        await notifyRequester(env, bookingId, booking.requester_id, 'booking_modified', JSON.stringify(diff));
+      }
     }
 
   } else {

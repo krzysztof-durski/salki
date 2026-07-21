@@ -159,8 +159,27 @@ export function getTokenFromRequest(request: Request): string {
 
 // ─── Guards ──────────────────────────────────────────────────────────────────
 
-export function requireUser(user: User | null): User {
-  if (!user) throw new Response(null, { status: 302, headers: { Location: '/login' } });
+// Only same-origin relative paths are honored as a post-login redirect
+// target, to prevent an open-redirect via a crafted `redirectTo` value.
+export function isSafeRedirectTarget(path: string): boolean {
+  return path.startsWith('/') && !path.startsWith('//') && !path.startsWith('/\\');
+}
+
+// `request` is optional so existing call sites keep working unchanged; pass
+// it to carry the original URL through to the login page as `redirectTo`,
+// so e.g. an email link to a specific booking survives a login round-trip.
+export function requireUser(user: User | null, request?: Request): User {
+  if (!user) {
+    let location = '/login';
+    if (request) {
+      const url = new URL(request.url);
+      const target = url.pathname + url.search;
+      if (isSafeRedirectTarget(target)) {
+        location = `/login?redirectTo=${encodeURIComponent(target)}`;
+      }
+    }
+    throw new Response(null, { status: 302, headers: { Location: location } });
+  }
   return user;
 }
 

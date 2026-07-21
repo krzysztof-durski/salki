@@ -5,16 +5,18 @@ import type { Route } from "./+types/rezerwacje.$id";
 import { getTokenFromRequest, getSessionUser, requireUser } from "~/lib/auth.server";
 import { queryOne, queryAll, execute } from "~/lib/db.server";
 import { logAction } from "~/lib/audit.server";
+import { notifyRequester } from "~/lib/notify.server";
 import { isAdmin, canManageBookings } from "~/types";
 import type { Booking, BookingChangeRequest, User } from "~/types";
 import { buildGoogleCalendarUrl, downloadIcs } from "~/lib/calendar-export";
-import { isValidDateFormat, isValidTimeFormat } from "~/lib/validation.server";
+import { isValidDateFormat, isValidTimeFormat, isPastDateTime } from "~/lib/validation.server";
+import { usePollingRevalidation } from "~/hooks/usePollingRevalidation";
 import { CheckCircle, XCircle, Clock, Edit2, RefreshCw, Trash2, Calendar } from "lucide-react";
 
 export async function loader({ params, request, context }: Route.LoaderArgs) {
   const { env } = context.cloudflare;
   const token = getTokenFromRequest(request);
-  const user = requireUser(await getSessionUser(env.DB, token));
+  const user = requireUser(await getSessionUser(env.DB, token), request);
 
   const booking = await queryOne<Booking & { room_category: string }>(
     env.DB,
@@ -101,10 +103,7 @@ export async function action({ params, request, context }: Route.ActionArgs) {
       return data({ error: "Konflikt — wniosek został już przetworzony lub termin jest już zajęty. Odśwież stronę." }, { status: 409 });
     }
 
-    await execute(env.DB,
-      "INSERT INTO notifications (user_id, booking_id, type) VALUES (?,?,'booking_approved')",
-      [booking.requester_id, bookingId]
-    );
+    await notifyRequester(env, bookingId, booking.requester_id, 'booking_approved');
     await logAction(env.DB, { userId: user.id, action: 'booking.approved', entityType: 'booking', entityId: bookingId });
   }
 
@@ -119,10 +118,7 @@ export async function action({ params, request, context }: Route.ActionArgs) {
     );
     if (!result.meta.changes) return data({ error: "Konflikt — wniosek został już przetworzony." }, { status: 409 });
 
-    await execute(env.DB,
-      "INSERT INTO notifications (user_id, booking_id, type) VALUES (?,?,'booking_rejected')",
-      [booking.requester_id, bookingId]
-    );
+    await notifyRequester(env, bookingId, booking.requester_id, 'booking_rejected');
     await logAction(env.DB, { userId: user.id, action: 'booking.rejected', entityType: 'booking', entityId: bookingId });
   }
 
@@ -142,6 +138,9 @@ export async function action({ params, request, context }: Route.ActionArgs) {
     if (counterStart >= counterEnd) {
       return data({ error: "Godzina końca musi być późniejsza niż godzina początku." }, { status: 400 });
     }
+    if (isPastDateTime(counterDate, counterStart)) {
+      return data({ error: "Nie można rezerwować terminów w przeszłości." }, { status: 400 });
+    }
 
     const result = await execute(
       env.DB,
@@ -152,10 +151,7 @@ export async function action({ params, request, context }: Route.ActionArgs) {
     );
     if (!result.meta.changes) return data({ error: "Konflikt — wniosek został już przetworzony." }, { status: 409 });
 
-    await execute(env.DB,
-      "INSERT INTO notifications (user_id, booking_id, type) VALUES (?,?,'counter_proposed')",
-      [booking.requester_id, bookingId]
-    );
+    await notifyRequester(env, bookingId, booking.requester_id, 'counter_proposed');
     await logAction(env.DB, { userId: user.id, action: 'booking.counter_proposed', entityType: 'booking', entityId: bookingId });
   }
 
@@ -229,6 +225,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function BookingDetail({ loaderData, actionData }: Route.ComponentProps) {
   const { user, booking, changeRequests, isBoard, editedFields } = loaderData;
+  usePollingRevalidation();
   const nav = useNavigation();
   const pending = nav.state === "submitting";
   const isOwner = booking.requester_id === user.id;

@@ -5,6 +5,7 @@ import { canManageBookings } from "~/types";
 import type { Room, Booking } from "~/types";
 import { useNavigate } from "react-router";
 import { useRef, useState, useEffect } from "react";
+import { usePollingRevalidation } from "~/hooks/usePollingRevalidation";
 
 const START_HOUR = 7;
 const END_HOUR = 21;
@@ -43,6 +44,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 
 export default function AdminDzisiaj({ loaderData }: Route.ComponentProps) {
   const { rooms, bookings, today } = loaderData;
+  usePollingRevalidation();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const [nowMinutes, setNowMinutes] = useState(() => {
@@ -112,7 +114,7 @@ export default function AdminDzisiaj({ loaderData }: Route.ComponentProps) {
         {/* Scrollable body */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto flex">
           {/* Time gutter */}
-          <div className="w-14 shrink-0 bg-white border-r border-gray-200">
+          <div className="relative w-14 shrink-0 bg-white">
             {Array.from({ length: TOTAL_SLOTS }).map((_, i) => {
               const totalMinutes = START_HOUR * 60 + i * SLOT_MINUTES;
               if (totalMinutes % 60 !== 0) return <div key={i} style={{ height: SLOT_HEIGHT }} />;
@@ -124,13 +126,22 @@ export default function AdminDzisiaj({ loaderData }: Route.ComponentProps) {
                 </div>
               );
             })}
+            {/* Divider to the room grid — small per-slot segments, not one tall
+                border, because a single hairline border spanning the whole
+                scrollable height silently stops repainting past the
+                initially-rendered viewport in some browsers (a known
+                composited-scroll under-invalidation bug). */}
+            {Array.from({ length: TOTAL_SLOTS }).map((_, i) => (
+              <div key={`gutter-div-${i}`} className="absolute right-0 w-px bg-gray-200" style={{ top: i * SLOT_HEIGHT, height: SLOT_HEIGHT }} />
+            ))}
           </div>
 
           {/* Room columns */}
-          {rooms.map(room => {
+          {rooms.map((room, roomIndex) => {
             const roomBookings = bookings.filter(b => b.room_id === room.id);
+            const notLast = roomIndex < rooms.length - 1;
             return (
-              <div key={room.id} className="flex-1 min-w-0 border-r border-gray-100 last:border-r-0 relative">
+              <div key={room.id} className="flex-1 min-w-0 relative">
                 <div className="relative" style={{ height: TOTAL_SLOTS * SLOT_HEIGHT }}>
                   {/* Grid lines */}
                   {Array.from({ length: TOTAL_SLOTS }).map((_, i) => (
@@ -139,6 +150,11 @@ export default function AdminDzisiaj({ loaderData }: Route.ComponentProps) {
                       className={`absolute left-0 right-0 border-t ${i % 2 === 0 ? 'border-gray-200' : 'border-gray-100'}`}
                       style={{ top: i * SLOT_HEIGHT }}
                     />
+                  ))}
+
+                  {/* Right divider — small per-slot segments, see gutter note above */}
+                  {notLast && Array.from({ length: TOTAL_SLOTS }).map((_, i) => (
+                    <div key={`div-${i}`} className="absolute right-0 w-px bg-gray-100" style={{ top: i * SLOT_HEIGHT, height: SLOT_HEIGHT }} />
                   ))}
 
                   {/* Current time line */}

@@ -3,10 +3,10 @@ import type { Route } from "./+types/rezerwacje.$id.zmiana";
 import { getTokenFromRequest, getSessionUser, requireUser } from "~/lib/auth.server";
 import { queryOne, execute } from "~/lib/db.server";
 import { logAction } from "~/lib/audit.server";
-import { notifyAdmins } from "~/lib/notify.server";
+import { notifyAdmins, notifyRequester } from "~/lib/notify.server";
 import { canManageBookings, isAdmin } from "~/types";
 import type { Booking, BookingChangeRequest } from "~/types";
-import { isValidDateFormat, isValidTimeFormat, parseAttendeeCount } from "~/lib/validation.server";
+import { isValidDateFormat, isValidTimeFormat, isPastDateTime, parseAttendeeCount } from "~/lib/validation.server";
 
 export async function loader({ params, request, context }: Route.LoaderArgs) {
   const { env } = context.cloudflare;
@@ -65,6 +65,20 @@ export async function action({ params, request, context }: Route.ActionArgs) {
         }
       }
 
+      // Diff for the requester's "your change was approved" email, captured
+      // before the UPDATE below overwrites the booking's current values.
+      const diff: Record<string, { from: unknown; to: unknown }> = {};
+      if (cr.new_date) diff.date = { from: booking.date, to: cr.new_date };
+      if (cr.new_start_time || cr.new_end_time) {
+        diff.hours = {
+          from: `${booking.start_time}–${booking.end_time}`,
+          to: `${cr.new_start_time ?? booking.start_time}–${cr.new_end_time ?? booking.end_time}`,
+        };
+      }
+      if (cr.new_title) diff.title = { from: booking.title, to: cr.new_title };
+      if (cr.new_attendee_count) diff.attendees = { from: booking.attendee_count, to: cr.new_attendee_count };
+      if (cr.requester_note) diff.note = { from: booking.requester_note, to: cr.requester_note };
+
       // Only update non-null fields
       const updates: string[] = [];
       const vals: unknown[] = [];
@@ -106,20 +120,14 @@ export async function action({ params, request, context }: Route.ActionArgs) {
         "UPDATE booking_change_requests SET status='approved', admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
         [adminNote, crId]
       );
-      await execute(env.DB,
-        "INSERT INTO notifications (user_id, booking_id, type) VALUES (?,?,'change_approved')",
-        [cr.requester_id, bookingId]
-      );
+      await notifyRequester(env, bookingId, cr.requester_id, 'change_approved', Object.keys(diff).length ? JSON.stringify(diff) : null);
       await logAction(env.DB, { userId: user.id, action: 'change_request.approved', entityType: 'booking', entityId: bookingId });
     } else {
       await execute(env.DB,
         "UPDATE booking_change_requests SET status='rejected', admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
         [adminNote, crId]
       );
-      await execute(env.DB,
-        "INSERT INTO notifications (user_id, booking_id, type) VALUES (?,?,'change_rejected')",
-        [cr.requester_id, bookingId]
-      );
+      await notifyRequester(env, bookingId, cr.requester_id, 'change_rejected', JSON.stringify({ reason: adminNote }));
       await logAction(env.DB, { userId: user.id, action: 'change_request.rejected', entityType: 'booking', entityId: bookingId });
     }
     return redirect(`/rezerwacje/${bookingId}`);
@@ -155,6 +163,9 @@ export async function action({ params, request, context }: Route.ActionArgs) {
     }
     if (targetStart >= targetEnd) {
       return data({ error: "Godzina końca musi być późniejsza niż godzina początku." }, { status: 400 });
+    }
+    if (isPastDateTime(targetDate, targetStart)) {
+      return data({ error: "Nie można rezerwować terminów w przeszłości." }, { status: 400 });
     }
 
     const originals: Record<string, string> = {};
@@ -227,6 +238,13 @@ export async function action({ params, request, context }: Route.ActionArgs) {
   }
   if (newEndTime !== null && !isValidTimeFormat(newEndTime)) {
     return data({ error: "Nieprawidłowy format godziny końca." }, { status: 400 });
+  }
+  if (hasCRChanges) {
+    const effDate = newDate ?? booking.date;
+    const effStart = newStartTime ?? booking.start_time;
+    if (isPastDateTime(effDate, effStart)) {
+      return data({ error: "Nie można rezerwować terminów w przeszłości." }, { status: 400 });
+    }
   }
   if (hasStartChange || hasEndChange) {
     const effStart = newStartTime ?? booking.start_time;

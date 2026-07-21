@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { redirect, data, Form, useNavigation } from "react-router";
 import type { Route } from "./+types/rezerwacje.nowa";
 import { getTokenFromRequest, getSessionUser, requireUser } from "~/lib/auth.server";
@@ -6,7 +7,7 @@ import { logAction } from "~/lib/audit.server";
 import { canDirectBookBoardRoom, canDirectBookGeneralRoom, canViewBoardRooms } from "~/types";
 import type { Room, User } from "~/types";
 import { notifyAdmins } from "~/lib/notify.server";
-import { isValidDateFormat, isValidTimeFormat, isPastDate, parseAttendeeCount } from "~/lib/validation.server";
+import { isValidDateFormat, isValidTimeFormat, isPastDateTime, parseAttendeeCount } from "~/lib/validation.server";
 
 export async function loader({ request, context }: Route.LoaderArgs) {
   const { env } = context.cloudflare;
@@ -59,7 +60,7 @@ export async function action({ request, context }: Route.ActionArgs) {
   if (startTime >= endTime) {
     return data({ error: "Godzina końca musi być późniejsza niż godzina początku." }, { status: 400 });
   }
-  if (isPastDate(date)) {
+  if (isPastDateTime(date, startTime)) {
     return data({ error: "Nie można rezerwować sali w przeszłości." }, { status: 400 });
   }
   const attendeeResult = parseAttendeeCount(form.get("attendee_count"));
@@ -151,6 +152,9 @@ export default function NowaRezerwacja({ loaderData, actionData }: Route.Compone
   const { user, rooms, prefilledRoom, prefilledDate, prefilledFrom, prefilledTo } = loaderData;
   const nav = useNavigation();
   const pending = nav.state === "submitting";
+  const [selectedRoomId, setSelectedRoomId] = useState(prefilledRoom ?? "");
+  const selectedRoom = rooms.find(r => String(r.id) === selectedRoomId);
+  const isBoard = selectedRoom?.category === 'board';
 
   return (
     <div className="w-full max-w-3xl mx-auto px-8 py-8">
@@ -162,7 +166,8 @@ export default function NowaRezerwacja({ loaderData, actionData }: Route.Compone
           <select
             name="room_id"
             required
-            defaultValue={prefilledRoom ?? ""}
+            value={selectedRoomId}
+            onChange={e => setSelectedRoomId(e.target.value)}
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
           >
             <option value="">— wybierz salę —</option>
@@ -240,7 +245,7 @@ export default function NowaRezerwacja({ loaderData, actionData }: Route.Compone
           />
         </div>
 
-        {user.role === 'zarzad' && (
+        {user.role === 'zarzad' && isBoard && (
           <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
             <input
               type="checkbox"
@@ -267,7 +272,7 @@ export default function NowaRezerwacja({ loaderData, actionData }: Route.Compone
             {pending ? "Wysyłam…" : "Złóż wniosek"}
           </button>
           <a
-            href="/"
+            href={prefilledRoom ? `/?sala=${prefilledRoom}` : "/"}
             className="px-4 py-2.5 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
           >
             Anuluj

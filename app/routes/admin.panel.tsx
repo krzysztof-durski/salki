@@ -4,6 +4,7 @@ import { getTokenFromRequest, getSessionUser, requireUser } from "~/lib/auth.ser
 import { queryAll } from "~/lib/db.server";
 import { canManageBookings, ROLE_LABELS } from "~/types";
 import type { Booking, Room } from "~/types";
+import { usePollingRevalidation } from "~/hooks/usePollingRevalidation";
 
 const PAGE_SIZE = 30;
 
@@ -76,6 +77,7 @@ const STATUS_COLOR: Record<string, string> = {
 
 export default function AdminPanel({ loaderData }: Route.ComponentProps) {
   const { bookings, rooms, total, page, filterRoom, filterStatus, filterFrom, filterTo } = loaderData;
+  usePollingRevalidation();
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
   function buildUrl(overrides: Record<string, string>) {

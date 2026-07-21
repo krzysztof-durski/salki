@@ -36,6 +36,16 @@ export type AdminNotificationType =
   | 'change_requested'
   | 'note_changed';
 
+// Status-change events emailed to the requester who owns the booking —
+// mirrors the subset of notification types that concern their own reservation.
+export type RequesterNotificationType =
+  | 'booking_approved'
+  | 'booking_rejected'
+  | 'counter_proposed'
+  | 'change_approved'
+  | 'change_rejected'
+  | 'booking_modified';
+
 export interface Room {
   id: number;
   name: string;
