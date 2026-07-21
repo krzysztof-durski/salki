@@ -45,16 +45,10 @@ export default function CalendarView({ user, rooms, bookings, activeRoomId, week
   const [tooltip, setTooltip] = useState<{ booking: Booking; x: number; y: number } | null>(null);
   const [calendarMenu, setCalendarMenu] = useState<{ booking: Booking; x: number; y: number } | null>(null);
 
-  const [nowMinutes, setNowMinutes] = useState(() => {
-    const d = new Date();
-    return d.getHours() * 60 + d.getMinutes();
-  });
+  const [nowMinutes, setNowMinutes] = useState(getWarsawNowMinutes);
 
   useEffect(() => {
-    const tick = () => {
-      const d = new Date();
-      setNowMinutes(d.getHours() * 60 + d.getMinutes());
-    };
+    const tick = () => setNowMinutes(getWarsawNowMinutes());
     const id = setInterval(tick, 60_000);
     return () => clearInterval(id);
   }, []);
@@ -694,12 +688,27 @@ function timeToSlot(time: string): number {
   return ((h - START_HOUR) * 60 + m) / SLOT_MINUTES;
 }
 
+// Bookings are for physical rooms in Poland, so "now" must always be Warsaw
+// wall-clock time regardless of the viewer's (or server's) local timezone —
+// otherwise the now-line and today-highlight drift by the local UTC offset.
+function getWarsawParts(): { year: string; month: string; day: string; hour: string; minute: string } {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Warsaw',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(new Date());
+  const get = (type: string) => parts.find(p => p.type === type)?.value ?? '';
+  return { year: get('year'), month: get('month'), day: get('day'), hour: get('hour'), minute: get('minute') };
+}
+
+function getWarsawNowMinutes(): number {
+  const { hour, minute } = getWarsawParts();
+  return Number(hour) * 60 + Number(minute);
+}
+
 function todayString(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  const { year, month, day } = getWarsawParts();
+  return `${year}-${month}-${day}`;
 }
 
 function formatWeekRange(weekStart: string): string {
