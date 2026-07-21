@@ -6,6 +6,7 @@ import type { Room, Booking } from "~/types";
 import { useNavigate } from "react-router";
 import { useRef, useState, useEffect } from "react";
 import { usePollingRevalidation } from "~/hooks/usePollingRevalidation";
+import { getWarsawNowMinutes, getWarsawToday } from "~/lib/warsaw-time";
 
 const START_HOUR = 7;
 const END_HOUR = 21;
@@ -19,8 +20,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const user = requireUser(await getSessionUser(env.DB, token));
   if (!canManageBookings(user.role)) throw new Response(null, { status: 403 });
 
-  const now = new Date();
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const today = getWarsawToday();
 
   const rooms = await queryAll<Room>(
     env.DB,
@@ -47,16 +47,10 @@ export default function AdminDzisiaj({ loaderData }: Route.ComponentProps) {
   usePollingRevalidation();
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const [nowMinutes, setNowMinutes] = useState(() => {
-    const d = new Date();
-    return d.getHours() * 60 + d.getMinutes();
-  });
+  const [nowMinutes, setNowMinutes] = useState(getWarsawNowMinutes);
 
   useEffect(() => {
-    const tick = () => {
-      const d = new Date();
-      setNowMinutes(d.getHours() * 60 + d.getMinutes());
-    };
+    const tick = () => setNowMinutes(getWarsawNowMinutes());
     const id = setInterval(tick, 60_000);
     return () => clearInterval(id);
   }, []);

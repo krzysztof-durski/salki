@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Star, Plus, CalendarPlus } from "lucide-reac
 import type { Room, Booking, User } from "~/types";
 import { isAdmin } from "~/types";
 import { buildGoogleCalendarUrl, downloadIcs } from "~/lib/calendar-export";
+import { getWarsawNowMinutes, getWarsawToday } from "~/lib/warsaw-time";
 
 interface Props {
   user?: User;
@@ -688,27 +689,8 @@ function timeToSlot(time: string): number {
   return ((h - START_HOUR) * 60 + m) / SLOT_MINUTES;
 }
 
-// Bookings are for physical rooms in Poland, so "now" must always be Warsaw
-// wall-clock time regardless of the viewer's (or server's) local timezone —
-// otherwise the now-line and today-highlight drift by the local UTC offset.
-function getWarsawParts(): { year: string; month: string; day: string; hour: string; minute: string } {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Europe/Warsaw',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', hour12: false,
-  }).formatToParts(new Date());
-  const get = (type: string) => parts.find(p => p.type === type)?.value ?? '';
-  return { year: get('year'), month: get('month'), day: get('day'), hour: get('hour'), minute: get('minute') };
-}
-
-function getWarsawNowMinutes(): number {
-  const { hour, minute } = getWarsawParts();
-  return Number(hour) * 60 + Number(minute);
-}
-
 function todayString(): string {
-  const { year, month, day } = getWarsawParts();
-  return `${year}-${month}-${day}`;
+  return getWarsawToday();
 }
 
 function formatWeekRange(weekStart: string): string {
