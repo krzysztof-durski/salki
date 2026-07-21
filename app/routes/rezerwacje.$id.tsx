@@ -104,7 +104,7 @@ export async function action({ params, request, context }: Route.ActionArgs) {
     }
 
     await notifyRequester(env, bookingId, booking.requester_id, 'booking_approved');
-    await logAction(env.DB, { userId: user.id, action: 'booking.approved', entityType: 'booking', entityId: bookingId });
+    await logAction(env.DB, { userId: user.id, action: 'booking.approved', entityType: 'booking', entityId: bookingId, request });
   }
 
   else if (_action === "reject") {
@@ -119,7 +119,7 @@ export async function action({ params, request, context }: Route.ActionArgs) {
     if (!result.meta.changes) return data({ error: "Konflikt — wniosek został już przetworzony." }, { status: 409 });
 
     await notifyRequester(env, bookingId, booking.requester_id, 'booking_rejected');
-    await logAction(env.DB, { userId: user.id, action: 'booking.rejected', entityType: 'booking', entityId: bookingId });
+    await logAction(env.DB, { userId: user.id, action: 'booking.rejected', entityType: 'booking', entityId: bookingId, request });
   }
 
   else if (_action === "counter") {
@@ -152,7 +152,7 @@ export async function action({ params, request, context }: Route.ActionArgs) {
     if (!result.meta.changes) return data({ error: "Konflikt — wniosek został już przetworzony." }, { status: 409 });
 
     await notifyRequester(env, bookingId, booking.requester_id, 'counter_proposed');
-    await logAction(env.DB, { userId: user.id, action: 'booking.counter_proposed', entityType: 'booking', entityId: bookingId });
+    await logAction(env.DB, { userId: user.id, action: 'booking.counter_proposed', entityType: 'booking', entityId: bookingId, request });
   }
 
   // ── User counter-response ──────────────────────────────────────────────
@@ -178,7 +178,7 @@ export async function action({ params, request, context }: Route.ActionArgs) {
     if (!result.meta.changes) {
       return data({ error: "Proponowany termin jest już zajęty lub wystąpił konflikt. Odśwież stronę." }, { status: 409 });
     }
-    await logAction(env.DB, { userId: user.id, action: 'booking.counter_accepted', entityType: 'booking', entityId: bookingId });
+    await logAction(env.DB, { userId: user.id, action: 'booking.counter_accepted', entityType: 'booking', entityId: bookingId, request });
   }
 
   else if (_action === "reject_counter") {
@@ -190,7 +190,7 @@ export async function action({ params, request, context }: Route.ActionArgs) {
       [bookingId, booking.version]
     );
     if (!result.meta.changes) return data({ error: "Wystąpił błąd — odśwież stronę." }, { status: 409 });
-    await logAction(env.DB, { userId: user.id, action: 'booking.counter_rejected', entityType: 'booking', entityId: bookingId });
+    await logAction(env.DB, { userId: user.id, action: 'booking.counter_rejected', entityType: 'booking', entityId: bookingId, request });
   }
 
   else if (_action === "delete") {
@@ -202,6 +202,7 @@ export async function action({ params, request, context }: Route.ActionArgs) {
       entityType: 'booking',
       entityId: bookingId,
       details: { room_id: booking.room_id, date: booking.date, status: booking.status },
+      request,
     });
     await execute(env.DB, "DELETE FROM bookings WHERE id = ?", [bookingId]);
     return redirect(canManageBookings(user.role) ? "/admin/panel" : "/");

@@ -121,14 +121,14 @@ export async function action({ params, request, context }: Route.ActionArgs) {
         [adminNote, crId]
       );
       await notifyRequester(env, bookingId, cr.requester_id, 'change_approved', Object.keys(diff).length ? JSON.stringify(diff) : null);
-      await logAction(env.DB, { userId: user.id, action: 'change_request.approved', entityType: 'booking', entityId: bookingId });
+      await logAction(env.DB, { userId: user.id, action: 'change_request.approved', entityType: 'booking', entityId: bookingId, request });
     } else {
       await execute(env.DB,
         "UPDATE booking_change_requests SET status='rejected', admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
         [adminNote, crId]
       );
       await notifyRequester(env, bookingId, cr.requester_id, 'change_rejected', JSON.stringify({ reason: adminNote }));
-      await logAction(env.DB, { userId: user.id, action: 'change_request.rejected', entityType: 'booking', entityId: bookingId });
+      await logAction(env.DB, { userId: user.id, action: 'change_request.rejected', entityType: 'booking', entityId: bookingId, request });
     }
     return redirect(`/rezerwacje/${bookingId}`);
   }
@@ -212,6 +212,7 @@ export async function action({ params, request, context }: Route.ActionArgs) {
         oldAttendeeCount: booking.attendee_count ?? null,   attendeeCount: newAttendeeCount ?? booking.attendee_count ?? null,
         oldRequesterNote: booking.requester_note ?? null,   requesterNote: requesterNote ?? booking.requester_note ?? null,
       },
+      request,
     });
 
     if (user.role === 'zarzad' && notifyReception) {
@@ -309,6 +310,7 @@ export async function action({ params, request, context }: Route.ActionArgs) {
       entityType: 'booking',
       entityId: bookingId,
       details: { oldTitle: booking.title, newTitle },
+      request,
     });
     if (hasNoteChange) {
       await notifyAdmins(env, bookingId, 'note_changed', JSON.stringify(notifDetails));
@@ -337,6 +339,7 @@ export async function action({ params, request, context }: Route.ActionArgs) {
       action: 'change_request.submitted',
       entityType: 'booking',
       entityId: bookingId,
+      request,
     });
     await notifyAdmins(env, bookingId, 'change_requested', JSON.stringify(notifDetails));
   } else {
@@ -346,6 +349,7 @@ export async function action({ params, request, context }: Route.ActionArgs) {
       action: 'booking.note_updated',
       entityType: 'booking',
       entityId: bookingId,
+      request,
     });
     await notifyAdmins(env, bookingId, 'note_changed', JSON.stringify(notifDetails));
   }

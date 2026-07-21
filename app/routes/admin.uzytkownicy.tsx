@@ -73,7 +73,7 @@ export async function action({ request, context }: Route.ActionArgs) {
       return data({ error: "Adres e-mail jest już zajęty." }, { status: 409 });
     }
 
-    await logAction(env.DB, { userId: actor.id, action: 'user.created', entityType: 'user', details: { email, role } });
+    await logAction(env.DB, { userId: actor.id, action: 'user.created', entityType: 'user', details: { email, role }, request });
     return data({ created: { name, email, tempPassword: tempPass, reason: 'created' as const } });
   }
 
@@ -87,7 +87,7 @@ export async function action({ request, context }: Route.ActionArgs) {
     if (editTarget?.role === 'super_admin' && actor.role !== 'super_admin')
       return data({ error: "Brak uprawnień do modyfikacji konta Super Admin." }, { status: 403 });
     await execute(env.DB, "UPDATE users SET name=?, role=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", [name, role, userId]);
-    await logAction(env.DB, { userId: actor.id, action: 'user.edited', entityType: 'user', entityId: userId });
+    await logAction(env.DB, { userId: actor.id, action: 'user.edited', entityType: 'user', entityId: userId, request });
   }
 
   else if (_action === "edit_profile") {
@@ -103,7 +103,7 @@ export async function action({ request, context }: Route.ActionArgs) {
     } catch {
       return data({ error: "Adres e-mail jest już zajęty." }, { status: 409 });
     }
-    await logAction(env.DB, { userId: actor.id, action: 'user.profile_edited', entityType: 'user', entityId: userId });
+    await logAction(env.DB, { userId: actor.id, action: 'user.profile_edited', entityType: 'user', entityId: userId, request });
     return data({ success: true });
   }
 
@@ -118,7 +118,7 @@ export async function action({ request, context }: Route.ActionArgs) {
       "UPDATE users SET is_active=CASE WHEN is_active=1 THEN 0 ELSE 1 END, updated_at=CURRENT_TIMESTAMP WHERE id=?",
       [userId]
     );
-    await logAction(env.DB, { userId: actor.id, action: 'user.toggled', entityType: 'user', entityId: userId });
+    await logAction(env.DB, { userId: actor.id, action: 'user.toggled', entityType: 'user', entityId: userId, request });
   }
 
   else if (_action === "reset_password") {
@@ -131,7 +131,7 @@ export async function action({ request, context }: Route.ActionArgs) {
     const tempPass = tempPasswordFromName(target.name);
     const hash = await hashPassword(tempPass);
     await execute(env.DB, "UPDATE users SET password_hash=?, must_change_password=1, updated_at=CURRENT_TIMESTAMP WHERE id=?", [hash, userId]);
-    await logAction(env.DB, { userId: actor.id, action: 'user.password_reset', entityType: 'user', entityId: userId });
+    await logAction(env.DB, { userId: actor.id, action: 'user.password_reset', entityType: 'user', entityId: userId, request });
     return data({ created: { name: target.name, email: target.email, tempPassword: tempPass, reason: 'reset' as const } });
   }
 
@@ -143,7 +143,7 @@ export async function action({ request, context }: Route.ActionArgs) {
       return data({ error: "Brak uprawnień do usunięcia konta Super Admin." }, { status: 403 });
 
     // Log before deletion while the row still exists
-    await logAction(env.DB, { userId: actor.id, action: 'user.deleted', entityType: 'user', entityId: userId });
+    await logAction(env.DB, { userId: actor.id, action: 'user.deleted', entityType: 'user', entityId: userId, request });
 
     // Nullify nullable FK references so history is preserved
     await execute(env.DB, "UPDATE audit_logs SET user_id = NULL WHERE user_id = ?", [userId]);
@@ -175,7 +175,7 @@ export async function action({ request, context }: Route.ActionArgs) {
       "UPDATE users SET admin_can_assign_admin=?, admin_can_assign_zarzad=?, admin_can_assign_pracownik=?, admin_can_manage_rooms=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
       [canAssignAdmin, canAssignZarzad, canAssignPracownik, canManageRoomsVal, userId]
     );
-    await logAction(env.DB, { userId: actor.id, action: 'user.edited', entityType: 'user', entityId: userId, details: { admin_permissions: { canAssignAdmin, canAssignZarzad, canAssignPracownik, canManageRoomsVal } } });
+    await logAction(env.DB, { userId: actor.id, action: 'user.edited', entityType: 'user', entityId: userId, details: { admin_permissions: { canAssignAdmin, canAssignZarzad, canAssignPracownik, canManageRoomsVal } }, request });
     return data({ success: true });
   }
 

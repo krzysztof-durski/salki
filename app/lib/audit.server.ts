@@ -8,7 +8,9 @@ export async function logAction(
     entityType: string;
     entityId?: number | null;
     details?: Record<string, unknown>;
-    ipAddress?: string | null;
+    // The incoming request, when one exists (system/cron actions have none)
+    // — the IP is read from it here so callers can't forget to pass it.
+    request?: Request | null;
   }
 ) {
   await execute(
@@ -21,7 +23,7 @@ export async function logAction(
       opts.entityType,
       opts.entityId ?? null,
       opts.details ? JSON.stringify(opts.details) : null,
-      opts.ipAddress ?? null,
+      opts.request?.headers.get('CF-Connecting-IP') ?? null,
     ]
   );
 }

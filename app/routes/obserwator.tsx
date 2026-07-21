@@ -6,6 +6,7 @@ import {
 } from "~/lib/auth.server";
 import { queryOne } from "~/lib/db.server";
 import { checkRateLimit, recordFailedAttempt, clearAttempts } from "~/lib/rate-limit.server";
+import { logAction } from "~/lib/audit.server";
 
 interface ObserverSettings {
   password: string | null;
@@ -41,12 +42,14 @@ export async function action({ request, context }: Route.ActionArgs) {
   const settings = await queryOne<ObserverSettings>(env.DB, "SELECT password, is_enabled FROM observer_settings WHERE id = 1");
   if (!settings?.is_enabled || !settings.password || password !== settings.password) {
     await recordFailedAttempt(env.DB, bucketKey);
+    await logAction(env.DB, { userId: null, action: 'auth.observer_login_failed', entityType: 'observer_session', request });
     return data({ error: "Nieprawidłowe hasło." }, { status: 401 });
   }
 
   await clearAttempts(env.DB, bucketKey);
 
   const token = await createObserverSession(env.DB);
+  await logAction(env.DB, { userId: null, action: 'auth.observer_login', entityType: 'observer_session', request });
   const headers = new Headers();
   headers.set("Set-Cookie", setObserverSessionCookie(token, request));
   return redirect("/obserwator/kalendarz", { headers });

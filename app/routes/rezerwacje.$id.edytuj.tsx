@@ -169,6 +169,7 @@ export async function action({ params, request, context }: Route.ActionArgs) {
     entityType: 'booking',
     entityId: bookingId,
     details: { date, startTime, endTime, editedByAdmin: adminUser },
+    request,
   });
 
   return redirect(`/rezerwacje/${bookingId}`);

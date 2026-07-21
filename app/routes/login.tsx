@@ -3,6 +3,7 @@ import type { Route } from "./+types/login";
 import { getTokenFromRequest, getSessionUser, verifyPassword, createSession, setSessionCookie, DUMMY_PASSWORD_HASH, isSafeRedirectTarget } from "~/lib/auth.server";
 import { queryOne, execute } from "~/lib/db.server";
 import { checkRateLimit, recordFailedAttempt, clearAttempts } from "~/lib/rate-limit.server";
+import { logAction } from "~/lib/audit.server";
 import type { User } from "~/types";
 import { CalendarDays } from "lucide-react";
 
@@ -47,6 +48,7 @@ export async function action({ request, context }: Route.ActionArgs) {
 
   if (!user || !valid) {
     await recordFailedAttempt(env.DB, bucketKey);
+    await logAction(env.DB, { userId: user?.id ?? null, action: 'auth.login_failed', entityType: 'user', entityId: user?.id ?? null, details: { email }, request });
     return data({ error: "Nieprawidłowy e-mail lub hasło." }, { status: 401 });
   }
 
@@ -56,6 +58,7 @@ export async function action({ request, context }: Route.ActionArgs) {
   // Snooze semantics: any admin who muted email notifications gets them
   // re-enabled on next login (they can only "snooze," not permanently mute).
   await execute(env.DB, "UPDATE users SET email_notifications_enabled=1, updated_at=CURRENT_TIMESTAMP WHERE id=?", [user.id]);
+  await logAction(env.DB, { userId: user.id, action: 'auth.login', entityType: 'user', entityId: user.id, request });
   const headers = new Headers();
   headers.set("Set-Cookie", setSessionCookie(token, request));
 

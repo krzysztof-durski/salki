@@ -53,7 +53,7 @@ export async function action({ request, context }: Route.ActionArgs) {
       `UPDATE observer_settings SET password = ?, is_enabled = 1, updated_at = CURRENT_TIMESTAMP, updated_by = ? WHERE id = 1`,
       [password, user.id]
     );
-    await logAction(env.DB, { userId: user.id, action: 'observer_settings.updated', entityType: 'observer_settings', details: { change: 'password_set' } });
+    await logAction(env.DB, { userId: user.id, action: 'observer_settings.updated', entityType: 'observer_settings', details: { change: 'password_set' }, request });
   }
 
   else if (_action === "toggle_enabled") {
@@ -62,7 +62,7 @@ export async function action({ request, context }: Route.ActionArgs) {
       `UPDATE observer_settings SET is_enabled = CASE WHEN is_enabled = 1 THEN 0 ELSE 1 END, updated_at = CURRENT_TIMESTAMP, updated_by = ? WHERE id = 1`,
       [user.id]
     );
-    await logAction(env.DB, { userId: user.id, action: 'observer_settings.updated', entityType: 'observer_settings', details: { change: 'toggle_enabled' } });
+    await logAction(env.DB, { userId: user.id, action: 'observer_settings.updated', entityType: 'observer_settings', details: { change: 'toggle_enabled' }, request });
   }
 
   return redirect("/admin/obserwator");

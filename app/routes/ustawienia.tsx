@@ -2,6 +2,7 @@ import { redirect, data, Form, Link, useNavigation, useSearchParams } from "reac
 import type { Route } from "./+types/ustawienia";
 import { getTokenFromRequest, getSessionUser, requireUser, hashPassword, verifyPassword, deleteOtherSessions } from "~/lib/auth.server";
 import { queryAll, execute } from "~/lib/db.server";
+import { logAction } from "~/lib/audit.server";
 import type { Room } from "~/types";
 
 export async function loader({ request, context }: Route.LoaderArgs) {
@@ -51,6 +52,7 @@ export async function action({ request, context }: Route.ActionArgs) {
     );
     // Revoke every other session so a stolen/leaked login doesn't survive this change.
     await deleteOtherSessions(env.DB, user.id, token);
+    await logAction(env.DB, { userId: user.id, action: 'user.password_changed', entityType: 'user', entityId: user.id, details: { wasForced }, request });
     // After forced first-login password change, go straight to the app
     return redirect(wasForced ? "/" : "/ustawienia?ok=1");
   }

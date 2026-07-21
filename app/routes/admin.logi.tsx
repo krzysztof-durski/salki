@@ -48,16 +48,31 @@ const ACTION_LABELS: Record<string, string> = {
   'booking.counter_accepted': 'Zaakceptowano kontrpropozycję',
   'booking.counter_rejected': 'Odrzucono kontrpropozycję',
   'booking.edited': 'Edytowano wniosek',
+  'booking.deleted': 'Usunięto rezerwację',
+  'booking.zarzad_direct_edit': 'Edycja bezpośrednia (zarząd)',
+  'booking.title_changed': 'Zmieniono tytuł rezerwacji',
+  'booking.note_updated': 'Zaktualizowano notatkę',
   'change_request.submitted': 'Złożono wniosek o zmianę',
   'change_request.approved': 'Zatwierdzono zmianę',
   'change_request.rejected': 'Odrzucono zmianę',
   'user.created': 'Utworzono użytkownika',
   'user.edited': 'Edytowano użytkownika',
+  'user.profile_edited': 'Edytowano profil użytkownika',
   'user.toggled': 'Zmieniono status użytkownika',
+  'user.deleted': 'Usunięto użytkownika',
+  'user.password_reset': 'Zresetowano hasło użytkownika',
+  'user.password_changed': 'Zmieniono własne hasło',
   'room.created': 'Dodano salę',
   'room.edited': 'Edytowano salę',
   'room.toggled': 'Zmieniono status sali',
   'observer_settings.updated': 'Zaktualizowano ustawienia obserwatora',
+  'auth.login': 'Zalogowano',
+  'auth.login_failed': 'Nieudane logowanie',
+  'auth.logout': 'Wylogowano',
+  'auth.observer_login': 'Zalogowano do podglądu',
+  'auth.observer_login_failed': 'Nieudane logowanie do podglądu',
+  'auth.observer_logout': 'Wylogowano z podglądu',
+  'retention.cleanup': 'Automatyczne czyszczenie danych',
 };
 
 const ENTITY_TYPE_LABELS: Record<string, string> = {
@@ -66,6 +81,8 @@ const ENTITY_TYPE_LABELS: Record<string, string> = {
   room: 'Sala',
   change_request: 'Wniosek o zmianę',
   observer_settings: 'Ustawienia obserwatora',
+  observer_session: 'Sesja podglądu',
+  system: 'System',
 };
 
 function entityLabel(log: AuditLogRow): string {

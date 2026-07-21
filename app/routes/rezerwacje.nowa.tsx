@@ -135,7 +135,7 @@ export async function action({ request, context }: Route.ActionArgs) {
     entityType: 'booking',
     entityId: bookingId,
     details: { roomId, date, startTime, endTime, status },
-    ipAddress: request.headers.get('CF-Connecting-IP'),
+    request,
   });
 
   if (user.role === 'zarzad' && isDirect && notifyReception) {

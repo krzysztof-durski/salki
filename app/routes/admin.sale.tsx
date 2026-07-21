@@ -40,7 +40,7 @@ export async function action({ request, context }: Route.ActionArgs) {
       "INSERT INTO rooms (name, size_label, category, sort_order) VALUES (?, ?, ?, ?)",
       [name, sizeLabel, category, sortOrder]
     );
-    await logAction(env.DB, { userId: user.id, action: 'room.created', entityType: 'room', details: { name, category } });
+    await logAction(env.DB, { userId: user.id, action: 'room.created', entityType: 'room', details: { name, category }, request });
   }
 
   else if (_action === "edit") {
@@ -54,7 +54,7 @@ export async function action({ request, context }: Route.ActionArgs) {
       "UPDATE rooms SET name=?, size_label=?, category=?, sort_order=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
       [name, sizeLabel, category, sortOrder, roomId]
     );
-    await logAction(env.DB, { userId: user.id, action: 'room.edited', entityType: 'room', entityId: roomId });
+    await logAction(env.DB, { userId: user.id, action: 'room.edited', entityType: 'room', entityId: roomId, request });
   }
 
   else if (_action === "toggle_active") {
@@ -64,7 +64,7 @@ export async function action({ request, context }: Route.ActionArgs) {
       "UPDATE rooms SET is_active=CASE WHEN is_active=1 THEN 0 ELSE 1 END, updated_at=CURRENT_TIMESTAMP WHERE id=?",
       [roomId]
     );
-    await logAction(env.DB, { userId: user.id, action: 'room.toggled', entityType: 'room', entityId: roomId });
+    await logAction(env.DB, { userId: user.id, action: 'room.toggled', entityType: 'room', entityId: roomId, request });
   }
 
   return redirect("/admin/sale");

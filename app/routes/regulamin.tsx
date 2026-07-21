@@ -87,6 +87,15 @@ export default function Regulamin() {
               Ustawieniach — wyłączenie obowiązuje wyłącznie do
               najbliższego zalogowania.
             </li>
+            <li>
+              Osoba zgłaszająca rezerwację otrzymuje powiadomienie e-mail, gdy
+              jej rezerwacja zostanie zatwierdzona, odrzucona, gdy
+              administrator zaproponuje inny termin lub zmieni jej
+              rezerwację — wraz z linkiem do dodania terminu do kalendarza
+              Google oraz plikiem .ics. Powiadomienia te dotyczą własnej
+              rezerwacji użytkownika i mają charakter transakcyjny — nie
+              można ich wyłączyć.
+            </li>
           </ul>
         </div>
 
@@ -229,12 +238,16 @@ export default function Regulamin() {
                 </tr>
                 <tr>
                   <td className="px-3 py-2">
-                    Służbowy adres e-mail administratora systemu
+                    Służbowy adres e-mail administratora systemu oraz adres
+                    e-mail osoby zgłaszającej rezerwację
                   </td>
                   <td className="px-3 py-2">
-                    Wysyłka powiadomień e-mail o nowych wnioskach o
-                    rezerwację i zmianach (funkcję można tymczasowo
-                    wyłączyć w Ustawieniach)
+                    Wysyłka powiadomień e-mail: administratorom — o nowych
+                    wnioskach o rezerwację i zmianach (funkcję można
+                    tymczasowo wyłączyć w Ustawieniach); osobie zgłaszającej
+                    — o zatwierdzeniu, odrzuceniu, kontrpropozycji lub
+                    zmianie jej rezerwacji (powiadomienie transakcyjne, bez
+                    możliwości wyłączenia)
                   </td>
                   <td className="px-3 py-2">
                     Art. 6 ust. 1 lit. f RODO — uzasadniony interes
@@ -268,7 +281,10 @@ export default function Regulamin() {
                 </tr>
                 <tr>
                   <td className="px-3 py-2">
-                    Logi audytowe (kto, jaką akcję, kiedy)
+                    Logi audytowe (kto, jaką akcję i kiedy wykonał — w tym
+                    logowania, wylogowania, zmiany hasła, logowania i
+                    wylogowania z trybu obserwatora oraz nieudane próby
+                    logowania wraz z podanym adresem e-mail i adresem IP)
                   </td>
                   <td className="px-3 py-2">
                     Bezpieczeństwo systemu, rozliczalność, wykrywanie nadużyć
@@ -380,6 +396,15 @@ export default function Regulamin() {
               </tbody>
             </table>
           </div>
+          <p className="text-sm text-gray-600">
+            Adres e-mail i adres IP podane przy nieudanej próbie logowania są
+            przechowywane krócej (do 24 godzin) wyłącznie w mechanizmie
+            ograniczającym liczbę prób logowania (patrz wyżej). Zapis samego
+            zdarzenia w logu audytowym — zawierający ten sam adres e-mail i
+            adres IP — podlega odrębnemu celowi (rozliczalność, wykrywanie
+            nadużyć) i ogólnemu okresowi przechowywania logów audytowych (12
+            miesięcy).
+          </p>
         </div>
 
         <div className="space-y-1">
@@ -405,16 +430,24 @@ export default function Regulamin() {
           </p>
           <p className="text-sm text-gray-600">
             Powiadomienia e-mail o nowych wnioskach o rezerwację i zmianach
-            są wysyłane administratorom systemu za pośrednictwem usługi{" "}
-            <strong>Resend</strong> (Plus Five Five, Inc., USA). Do Resend
-            przekazywany jest adres e-mail administratora-odbiorcy oraz
-            treść wiadomości (nazwa sali, data, godziny, imię i nazwisko
-            osoby zgłaszającej, tytuł spotkania oraz ewentualne uwagi do
-            rezerwacji). Przekazanie danych do USA odbywa się na podstawie
-            standardowych klauzul umownych (SCC) zawartych w Data
+            są wysyłane administratorom systemu, a powiadomienia o
+            zatwierdzeniu, odrzuceniu, kontrpropozycji lub zmianie
+            rezerwacji — również osobie zgłaszającej, za pośrednictwem
+            usługi <strong>Resend</strong> (Plus Five Five, Inc., USA). Do
+            Resend przekazywany jest adres e-mail odbiorcy (administratora
+            lub osoby zgłaszającej) oraz treść wiadomości (nazwa sali,
+            data, godziny, imię i nazwisko osoby zgłaszającej, tytuł
+            spotkania, ewentualne uwagi do rezerwacji lub uzasadnienie
+            decyzji administratora), a w powiadomieniach do osoby
+            zgłaszającej dodatkowo plik kalendarza .ics wygenerowany z tych
+            samych danych. Przekazanie danych do USA odbywa się na
+            podstawie standardowych klauzul umownych (SCC) zawartych w Data
             Processing Addendum Resend, zgodnie z art. 46 ust. 2 lit. c
-            RODO. Funkcję powiadomień e-mail można wyłączyć indywidualnie
-            w Ustawieniach. Polityka prywatności Resend:{" "}
+            RODO. Powiadomienia e-mail dla administratorów można wyłączyć
+            indywidualnie w Ustawieniach; powiadomienia wysyłane do osoby
+            zgłaszającej dotyczą jej własnej rezerwacji, mają charakter
+            transakcyjny i nie podlegają wyłączeniu. Polityka prywatności
+            Resend:{" "}
             <a
               href="https://resend.com/legal/privacy-policy"
               target="_blank"
@@ -515,7 +548,7 @@ export default function Regulamin() {
       </section>
 
       <p className="text-xs text-gray-400">
-        Dokument zaktualizowany: 2026-07-20
+        Dokument zaktualizowany: 2026-07-21
       </p>
       </div>
     </div>
