@@ -4,7 +4,7 @@ import { getTokenFromRequest, getSessionUser, requireUser } from "~/lib/auth.ser
 import { queryOne } from "~/lib/db.server";
 import { canManageBookings, canManageUsers, canViewAuditLogs, canManageRooms, canManageObserverSettings } from "~/types";
 import {
-  CalendarDays, Settings, LogOut, Users, DoorOpen, ScrollText, ClipboardList, Menu, X, Bell, CalendarRange, CalendarCheck, Eye
+  CalendarDays, Settings, LogOut, Users, DoorOpen, ScrollText, ClipboardList, Menu, X, Bell, CalendarRange, CalendarCheck, Eye, Repeat
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 
@@ -133,9 +133,10 @@ export default function AppShell({ loaderData }: Route.ComponentProps) {
 
   const nav = [
     { to: "/", label: "Kalendarz", icon: CalendarDays },
-    ...(canManageBookings(user.role) ? [{ to: "/admin/dzisiaj", label: "Dzisiaj", icon: CalendarCheck }] : []),
+    ...(canManageBookings(user.role) ? [{ to: "/admin/dzisiaj", label: "Widok dnia", icon: CalendarCheck }] : []),
     ...(canManageBookings(user.role) ? [{ to: "/admin/rezerwacje", label: "Prośby o rezerwacje", icon: ClipboardList }] : []),
     ...(canManageBookings(user.role) ? [{ to: "/admin/panel", label: "Rezerwacje", icon: CalendarRange }] : []),
+    ...(canManageBookings(user.role) ? [{ to: "/admin/serie", label: "Serie cykliczne", icon: Repeat }] : []),
     ...(canManageUsers(user.role)    ? [{ to: "/admin/uzytkownicy", label: "Użytkownicy", icon: Users }] : []),
     ...(canManageRooms(user)         ? [{ to: "/admin/sale", label: "Sale", icon: DoorOpen }] : []),
     ...(canViewAuditLogs(user.role)  ? [{ to: "/admin/logi", label: "Logi", icon: ScrollText }] : []),

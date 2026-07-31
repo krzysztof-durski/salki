@@ -4,7 +4,7 @@ import type { Route } from "./+types/rezerwacje.nowa";
 import { getTokenFromRequest, getSessionUser, requireUser } from "~/lib/auth.server";
 import { queryAll, queryOne, execute } from "~/lib/db.server";
 import { logAction } from "~/lib/audit.server";
-import { canDirectBookBoardRoom, canDirectBookGeneralRoom, canViewBoardRooms } from "~/types";
+import { canDirectBookBoardRoom, canDirectBookGeneralRoom, canViewBoardRooms, canManageBookings } from "~/types";
 import type { Room, User } from "~/types";
 import { notifyAdmins } from "~/lib/notify.server";
 import { isValidDateFormat, isValidTimeFormat, isPastDateTime, parseAttendeeCount } from "~/lib/validation.server";
@@ -47,6 +47,7 @@ export async function action({ request, context }: Route.ActionArgs) {
   const title = (form.get("title") as string)?.trim() || null;
   const requesterNote = (form.get("requester_note") as string)?.trim() || null;
   const notifyReception = form.get("notify_reception") === "on";
+  const hideDetailsForObserver = form.get("hide_details_for_observer") === "on";
 
   if (!roomId || !date || !startTime || !endTime) {
     return data({ error: "Wypełnij wymagane pola." }, { status: 400 });
@@ -102,14 +103,14 @@ export async function action({ request, context }: Route.ActionArgs) {
     result = await execute(
       env.DB,
       `INSERT INTO bookings
-         (room_id, requester_id, created_by_admin_id, title, date, start_time, end_time, attendee_count, status, requester_note)
-       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+         (room_id, requester_id, created_by_admin_id, title, date, start_time, end_time, attendee_count, status, requester_note, hide_details_for_observer)
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
        WHERE NOT EXISTS (
          SELECT 1 FROM bookings b2
          WHERE b2.room_id = ? AND b2.date = ? AND b2.status = 'approved'
            AND b2.start_time < ? AND b2.end_time > ?
        )`,
-      [roomId, user.id, user.id, title, date, startTime, endTime, attendeeCount, status, requesterNote,
+      [roomId, user.id, user.id, title, date, startTime, endTime, attendeeCount, status, requesterNote, hideDetailsForObserver ? 1 : 0,
        roomId, date, endTime, startTime]
     );
     if (!result.meta.changes) {
@@ -121,9 +122,9 @@ export async function action({ request, context }: Route.ActionArgs) {
     result = await execute(
       env.DB,
       `INSERT INTO bookings
-         (room_id, requester_id, created_by_admin_id, title, date, start_time, end_time, attendee_count, status, requester_note)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [roomId, user.id, null, title, date, startTime, endTime, attendeeCount, status, requesterNote]
+         (room_id, requester_id, created_by_admin_id, title, date, start_time, end_time, attendee_count, status, requester_note, hide_details_for_observer)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [roomId, user.id, null, title, date, startTime, endTime, attendeeCount, status, requesterNote, hideDetailsForObserver ? 1 : 0]
     );
   }
 
@@ -158,7 +159,14 @@ export default function NowaRezerwacja({ loaderData, actionData }: Route.Compone
 
   return (
     <div className="w-full max-w-3xl mx-auto px-8 py-8">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Nowa rezerwacja</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">Nowa rezerwacja</h1>
+        {canManageBookings(user.role) && (
+          <a href="/admin/serie/nowa" className="text-sm text-blue-600 hover:underline">
+            Utwórz serię cykliczną →
+          </a>
+        )}
+      </div>
 
       <Form method="post" className="space-y-5 bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
         <div>
@@ -256,6 +264,20 @@ export default function NowaRezerwacja({ loaderData, actionData }: Route.Compone
             Powiadom Recepcję o rezerwacji
           </label>
         )}
+
+        <div>
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              name="hide_details_for_observer"
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            Ukryj detale rezerwacji dla Obserwatora
+          </label>
+          <p className="text-xs text-gray-400 mt-1 ml-6">
+            * W widoku Obserwatora ta rezerwacja pojawi się jako "Blokada", bez tytułu i innych szczegółów.
+          </p>
+        </div>
 
         {actionData?.error && (
           <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">

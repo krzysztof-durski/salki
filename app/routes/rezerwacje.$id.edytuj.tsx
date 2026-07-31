@@ -1,12 +1,14 @@
+import { useState } from "react";
 import { redirect, data, Form, Link, useNavigation } from "react-router";
 import type { Route } from "./+types/rezerwacje.$id.edytuj";
 import { getTokenFromRequest, getSessionUser, requireUser } from "~/lib/auth.server";
 import { queryOne, queryAll, execute } from "~/lib/db.server";
 import { logAction } from "~/lib/audit.server";
 import { notifyRequester } from "~/lib/notify.server";
-import { isAdmin } from "~/types";
-import type { Booking, Room } from "~/types";
-import { isValidDateFormat, isValidTimeFormat, isPastDateTime, parseAttendeeCount } from "~/lib/validation.server";
+import { isAdmin, RECURRENCE_TYPE_LABELS, WEEKDAY_LABELS } from "~/types";
+import type { Booking, Room, BookingSeries } from "~/types";
+import { isValidDateFormat, isValidTimeFormat, isPastDateTime, parseAttendeeCount, todayWarsaw } from "~/lib/validation.server";
+import { bulkUpdateSeriesOccurrences } from "~/lib/recurrence.server";
 
 export async function loader({ params, request, context }: Route.LoaderArgs) {
   const { env } = context.cloudflare;
@@ -36,7 +38,11 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
     ? await queryAll<Room>(env.DB, "SELECT id, name, category FROM rooms WHERE is_active=1 ORDER BY sort_order")
     : null;
 
-  return { booking, isAdminUser: adminUser, rooms };
+  const series = booking.series_id
+    ? await queryOne<BookingSeries>(env.DB, "SELECT * FROM booking_series WHERE id = ?", [booking.series_id])
+    : null;
+
+  return { booking, isAdminUser: adminUser, rooms, series, today: todayWarsaw() };
 }
 
 export async function action({ params, request, context }: Route.ActionArgs) {
@@ -53,6 +59,8 @@ export async function action({ params, request, context }: Route.ActionArgs) {
   const title = (form.get("title") as string)?.trim() || null;
   const requesterNote = (form.get("requester_note") as string)?.trim() || null;
   const adminNote = (form.get("admin_note") as string)?.trim() || null;
+  const hideDetailsForObserver = form.get("hide_details_for_observer") === "on";
+  const editScope = (form.get("edit_scope") as string) || 'single';
   const bookingId = parseInt(params.id as string, 10);
   const adminUser = isAdmin(user.role);
 
@@ -96,22 +104,50 @@ export async function action({ params, request, context }: Route.ActionArgs) {
     targetRoomName = targetRoom.name;
   }
 
+  if (adminUser && booking.series_id && editScope !== 'single') {
+    // Bulk edit across a recurring series — content fields only (never date
+    // or the recurrence pattern itself), always clamped to today-or-later so
+    // past occurrences are never touched.
+    const today = todayWarsaw();
+    const threshold = editScope === 'future'
+      ? (booking.date > today ? booking.date : today)
+      : today;
+
+    const { updatedDates, skippedConflict, skippedException } = await bulkUpdateSeriesOccurrences(env.DB, {
+      seriesId: booking.series_id, fromDate: threshold, roomId: targetRoomId, title, startTime, endTime,
+      attendeeCount, requesterNote, hideDetailsForObserver,
+    });
+
+    await logAction(env.DB, {
+      userId: user.id, action: 'series.bulk_edited', entityType: 'booking_series', entityId: booking.series_id,
+      details: { updatedCount: updatedDates.length, skippedConflict, skippedException, scope: editScope },
+      request,
+    });
+
+    const qp = new URLSearchParams({ zaktualizowano: String(updatedDates.length) });
+    if (skippedConflict.length) qp.set("pominieto", skippedConflict.join(","));
+    return redirect(`/admin/serie/${booking.series_id}?${qp.toString()}`);
+  }
+
   if (adminUser) {
     // Admins can edit any booking; overlap check and version check folded
     // into one atomic UPDATE via NOT EXISTS, closing the race window between
-    // a separate check and this write.
+    // a separate check and this write. Editing a single occurrence of a
+    // series flags it as an exception so future bulk edits skip it.
     const result = await execute(
       env.DB,
       `UPDATE bookings
        SET room_id=?, date=?, start_time=?, end_time=?, title=?, attendee_count=?,
-           requester_note=?, admin_note=?, version=version+1, updated_at=CURRENT_TIMESTAMP
+           requester_note=?, admin_note=?, hide_details_for_observer=?,
+           series_exception=CASE WHEN series_id IS NOT NULL THEN 1 ELSE series_exception END,
+           version=version+1, updated_at=CURRENT_TIMESTAMP
        WHERE id=? AND version=?
          AND NOT EXISTS (
            SELECT 1 FROM bookings b2
            WHERE b2.room_id = ? AND b2.date = ? AND b2.status = 'approved'
              AND b2.id != bookings.id AND b2.start_time < ? AND b2.end_time > ?
          )`,
-      [targetRoomId, date, startTime, endTime, title, attendeeCount, requesterNote, adminNote,
+      [targetRoomId, date, startTime, endTime, title, attendeeCount, requesterNote, adminNote, hideDetailsForObserver ? 1 : 0,
        bookingId, version,
        targetRoomId, date, endTime, startTime]
     );
@@ -146,14 +182,14 @@ export async function action({ params, request, context }: Route.ActionArgs) {
       env.DB,
       `UPDATE bookings
        SET date=?, start_time=?, end_time=?, title=?, attendee_count=?,
-           requester_note=?, version=version+1, updated_at=CURRENT_TIMESTAMP
+           requester_note=?, hide_details_for_observer=?, version=version+1, updated_at=CURRENT_TIMESTAMP
        WHERE id=? AND version=? AND status='pending' AND requester_id=?
          AND NOT EXISTS (
            SELECT 1 FROM bookings b2
            WHERE b2.room_id = bookings.room_id AND b2.date = ? AND b2.status = 'approved'
              AND b2.id != bookings.id AND b2.start_time < ? AND b2.end_time > ?
          )`,
-      [date, startTime, endTime, title, attendeeCount, requesterNote, bookingId, version, user.id,
+      [date, startTime, endTime, title, attendeeCount, requesterNote, hideDetailsForObserver ? 1 : 0, bookingId, version, user.id,
        date, endTime, startTime]
     );
     if (!result.meta.changes) {
@@ -175,10 +211,18 @@ export async function action({ params, request, context }: Route.ActionArgs) {
   return redirect(`/rezerwacje/${bookingId}`);
 }
 
+const EDIT_SCOPE_OPTIONS: { value: 'single' | 'future' | 'all'; label: string }[] = [
+  { value: 'single', label: 'Tylko ten termin' },
+  { value: 'future', label: 'Ten i wszystkie przyszłe terminy' },
+  { value: 'all', label: 'Wszystkie terminy w serii' },
+];
+
 export default function EdytujRezerwacje({ loaderData, actionData }: Route.ComponentProps) {
-  const { booking, isAdminUser, rooms } = loaderData;
+  const { booking, isAdminUser, rooms, series, today } = loaderData;
   const nav = useNavigation();
   const pending = nav.state === "submitting";
+  const [editScope, setEditScope] = useState<'single' | 'future' | 'all'>('single');
+  const canChooseScope = isAdminUser && booking.series_id != null && booking.date >= today;
 
   return (
     <div className="w-full max-w-3xl mx-auto px-8 py-8">
@@ -189,8 +233,36 @@ export default function EdytujRezerwacje({ loaderData, actionData }: Route.Compo
         <Link to={`/rezerwacje/${booking.id}`} className="text-sm text-gray-500 hover:text-gray-700">Anuluj</Link>
       </div>
 
+      {series && (
+        <p className="text-sm text-gray-500 mb-4">
+          Część serii cyklicznej: {RECURRENCE_TYPE_LABELS[series.recurrence_type]}
+          {series.weekday != null ? `, ${WEEKDAY_LABELS[series.weekday]}` : ""}
+          {" "}{series.start_time}–{series.end_time}.{" "}
+          <Link to={`/admin/serie/${series.id}`} className="text-blue-600 hover:underline">Zobacz serię →</Link>
+        </p>
+      )}
+
       <Form method="post" className="space-y-5 bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
         <input type="hidden" name="version" value={booking.version} />
+
+        {canChooseScope && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-1.5">
+            <p className="text-xs font-medium text-blue-800 uppercase tracking-wide">Zakres zmiany</p>
+            {EDIT_SCOPE_OPTIONS.map(opt => (
+              <label key={opt.value} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
+                <input
+                  type="radio"
+                  name="edit_scope"
+                  value={opt.value}
+                  checked={editScope === opt.value}
+                  onChange={() => setEditScope(opt.value)}
+                  className="text-blue-600 focus:ring-blue-500"
+                />
+                {opt.label}
+              </label>
+            ))}
+          </div>
+        )}
 
         {/* Room picker — admin only */}
         {isAdminUser && rooms ? (
@@ -215,10 +287,17 @@ export default function EdytujRezerwacje({ loaderData, actionData }: Route.Compo
           <input name="title" type="text" defaultValue={booking.title ?? ''} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Data *</label>
-          <input name="date" type="date" required defaultValue={booking.date} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
-        </div>
+        {editScope === 'single' ? (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Data *</label>
+            <input name="date" type="date" required defaultValue={booking.date} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+          </div>
+        ) : (
+          <>
+            <input type="hidden" name="date" value={booking.date} />
+            <p className="text-xs text-gray-500">Data pozostaje bez zmian dla wielu terminów — każdy zachowuje swój dzień wg reguły serii.</p>
+          </>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -239,6 +318,21 @@ export default function EdytujRezerwacje({ loaderData, actionData }: Route.Compo
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Uwagi zgłaszającego</label>
           <textarea name="requester_note" rows={2} defaultValue={booking.requester_note ?? ''} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+        </div>
+
+        <div>
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              name="hide_details_for_observer"
+              defaultChecked={booking.hide_details_for_observer === 1}
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            Ukryj detale rezerwacji dla Obserwatora
+          </label>
+          <p className="text-xs text-gray-400 mt-1 ml-6">
+            * W widoku Obserwatora ta rezerwacja pojawi się jako "Blokada", bez tytułu i innych szczegółów.
+          </p>
         </div>
 
         {/* Admin-only section */}

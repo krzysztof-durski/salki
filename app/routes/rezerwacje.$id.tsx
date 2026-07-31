@@ -1,6 +1,7 @@
 import { redirect, data, Form, Link, useNavigation } from "react-router";
 import { useState, useRef } from "react";
 import { ConfirmModal } from "~/components/ConfirmModal";
+import { SeriesDeleteScopeModal, type DeleteScope } from "~/components/SeriesDeleteScopeModal";
 import type { Route } from "./+types/rezerwacje.$id";
 import { getTokenFromRequest, getSessionUser, requireUser } from "~/lib/auth.server";
 import { queryOne, queryAll, execute } from "~/lib/db.server";
@@ -9,7 +10,7 @@ import { notifyRequester } from "~/lib/notify.server";
 import { isAdmin, canManageBookings } from "~/types";
 import type { Booking, BookingChangeRequest, User } from "~/types";
 import { buildGoogleCalendarUrl, downloadIcs } from "~/lib/calendar-export";
-import { isValidDateFormat, isValidTimeFormat, isPastDateTime } from "~/lib/validation.server";
+import { isValidDateFormat, isValidTimeFormat, isPastDateTime, todayWarsaw } from "~/lib/validation.server";
 import { usePollingRevalidation } from "~/hooks/usePollingRevalidation";
 import { CheckCircle, XCircle, Clock, Edit2, RefreshCw, Trash2, Calendar } from "lucide-react";
 
@@ -64,7 +65,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
     } catch {}
   }
 
-  return { user, booking, changeRequests, isBoard: booking.room_category === 'board', editedFields };
+  return { user, booking, changeRequests, isBoard: booking.room_category === 'board', editedFields, today: todayWarsaw() };
 }
 
 export async function action({ params, request, context }: Route.ActionArgs) {
@@ -196,6 +197,25 @@ export async function action({ params, request, context }: Route.ActionArgs) {
   else if (_action === "delete") {
     const isOwner = booking.requester_id === user.id;
     if (!isOwner && !canManageBookings(user.role)) throw new Response(null, { status: 403 });
+
+    const deleteScope = (form.get("delete_scope") as string) || 'single';
+    if (canManageBookings(user.role) && booking.series_id && deleteScope !== 'single') {
+      const today = todayWarsaw();
+      const threshold = deleteScope === 'future'
+        ? (booking.date > today ? booking.date : today)
+        : today;
+      await execute(env.DB, "DELETE FROM bookings WHERE series_id = ? AND date >= ?", [booking.series_id, threshold]);
+      await logAction(env.DB, {
+        userId: user.id,
+        action: 'series.bulk_deleted',
+        entityType: 'booking_series',
+        entityId: booking.series_id,
+        details: { fromDate: threshold, scope: deleteScope },
+        request,
+      });
+      return redirect(`/admin/serie/${booking.series_id}`);
+    }
+
     await logAction(env.DB, {
       userId: user.id,
       action: 'booking.deleted',
@@ -225,14 +245,23 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function BookingDetail({ loaderData, actionData }: Route.ComponentProps) {
-  const { user, booking, changeRequests, isBoard, editedFields } = loaderData;
+  const { user, booking, changeRequests, isBoard, editedFields, today } = loaderData;
   usePollingRevalidation();
   const nav = useNavigation();
   const pending = nav.state === "submitting";
   const isOwner = booking.requester_id === user.id;
   const isAdminUser = isAdmin(user.role);
   const [confirm, setConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
+  const [showSeriesDelete, setShowSeriesDelete] = useState(false);
   const deleteFormRef = useRef<HTMLFormElement>(null);
+  const canChooseDeleteScope = isAdminUser && booking.series_id != null && booking.date >= today;
+
+  function submitDelete(scope: DeleteScope) {
+    const f = deleteFormRef.current;
+    if (!f) return;
+    (f.elements.namedItem('delete_scope') as HTMLInputElement).value = scope;
+    f.requestSubmit();
+  }
 
   return (
     <div className="w-full max-w-3xl mx-auto px-8 py-8 space-y-6">
@@ -300,14 +329,18 @@ export default function BookingDetail({ loaderData, actionData }: Route.Componen
         {(isOwner || isAdminUser) && (
           <Form method="post" ref={deleteFormRef}>
             <input type="hidden" name="_action" value="delete" />
+            <input type="hidden" name="delete_scope" value="single" />
             <button
               type="button"
               disabled={pending}
               className="flex items-center gap-1.5 text-sm text-red-500 hover:text-red-700 transition-colors"
-              onClick={() => setConfirm({
-                message: "Usunąć tę rezerwację? Operacja jest nieodwracalna.",
-                onConfirm: () => deleteFormRef.current?.requestSubmit(),
-              })}
+              onClick={() => {
+                if (canChooseDeleteScope) { setShowSeriesDelete(true); return; }
+                setConfirm({
+                  message: "Usunąć tę rezerwację? Operacja jest nieodwracalna.",
+                  onConfirm: () => deleteFormRef.current?.requestSubmit(),
+                });
+              }}
             >
               <Trash2 size={14} /> Usuń rezerwację
             </button>
@@ -366,6 +399,13 @@ export default function BookingDetail({ loaderData, actionData }: Route.Componen
           message={confirm.message}
           onConfirm={() => { confirm.onConfirm(); setConfirm(null); }}
           onCancel={() => setConfirm(null)}
+        />
+      )}
+
+      {showSeriesDelete && (
+        <SeriesDeleteScopeModal
+          onConfirm={(scope) => { submitDelete(scope); setShowSeriesDelete(false); }}
+          onCancel={() => setShowSeriesDelete(false)}
         />
       )}
     </div>

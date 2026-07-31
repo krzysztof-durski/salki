@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router";
 import { useRef, useState, useEffect, useMemo } from "react";
-import { ChevronLeft, ChevronRight, Star, Plus, CalendarPlus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Star, Plus, CalendarPlus, Repeat } from "lucide-react";
 import type { Room, Booking, User } from "~/types";
 import { isAdmin } from "~/types";
 import { buildGoogleCalendarUrl, downloadIcs } from "~/lib/calendar-export";
@@ -542,6 +542,11 @@ function BookingSlot({
       <p className="opacity-80 truncate">{effectiveStart}–{effectiveEnd}</p>
       {isAdminView && booking.requester_role === 'zarzad' && (
         <span className="absolute top-0.5 right-1 text-[9px] bg-purple-100 text-purple-700 border border-purple-300 px-1 py-0.5 rounded-full leading-none">Zarząd</span>
+      )}
+      {booking.series_id != null && (
+        <span title="Część serii cyklicznej" className="absolute top-0.5 left-0.5 text-gray-500/70">
+          <Repeat size={10} />
+        </span>
       )}
       <p className="absolute bottom-1 left-1.5 opacity-60 text-[10px] leading-none">{label}</p>
       <button

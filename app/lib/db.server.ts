@@ -22,3 +22,10 @@ export async function execute(db: D1Database, sql: string, params: unknown[] = [
   const bound = params.length ? stmt.bind(...params) : stmt;
   return bound.run();
 }
+
+// Runs multiple prepared statements as a single atomic D1 batch — used to
+// materialize/update many recurring-booking occurrences at once while still
+// getting a per-statement result (so callers can tell which rows landed).
+export async function batch(db: D1Database, statements: D1PreparedStatement[]): Promise<D1Result[]> {
+  return db.batch(statements);
+}

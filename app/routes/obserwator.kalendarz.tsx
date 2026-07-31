@@ -15,6 +15,7 @@ interface ObserverBookingRow {
   end_time: string;
   title: string | null;
   status: BookingStatus;
+  hide_details_for_observer: number;
 }
 
 export async function loader({ request, context }: Route.LoaderArgs) {
@@ -46,7 +47,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     const placeholders = roomIds.map(() => '?').join(',');
     const rows = await queryAll<ObserverBookingRow>(
       env.DB,
-      `SELECT b.id, b.room_id, r.name as room_name, b.date, b.start_time, b.end_time, b.title, b.status
+      `SELECT b.id, b.room_id, r.name as room_name, b.date, b.start_time, b.end_time, b.title, b.status, b.hide_details_for_observer
        FROM bookings b
        JOIN rooms r ON r.id = b.room_id
        WHERE b.room_id IN (${placeholders})
@@ -61,7 +62,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
       room_name: r.room_name,
       requester_id: 0,
       created_by_admin_id: null,
-      title: r.title,
+      title: r.hide_details_for_observer ? 'Blokada' : r.title,
       date: r.date,
       start_time: r.start_time,
       end_time: r.end_time,
@@ -75,6 +76,9 @@ export async function loader({ request, context }: Route.LoaderArgs) {
       counter_end_time: null,
       version: 0,
       zarzad_edited_fields: null,
+      series_id: null,
+      series_exception: 0,
+      hide_details_for_observer: r.hide_details_for_observer,
       created_at: '',
       updated_at: '',
     }));

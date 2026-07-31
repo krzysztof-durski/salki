@@ -22,6 +22,12 @@ function nowInWarsaw(): { date: string; time: string } {
   return { date: `${get('year')}-${get('month')}-${get('day')}`, time: `${get('hour')}:${get('minute')}` };
 }
 
+// Today's date (YYYY-MM-DD) in Europe/Warsaw local time — the timezone the
+// physical rooms are in, regardless of the requester's/admin's browser tz.
+export function todayWarsaw(): string {
+  return nowInWarsaw().date;
+}
+
 // Whole days since some fixed reference point, purely from the Y/M/D digits
 // (no timezone conversion) — used only to diff two Warsaw wall-clock
 // date/time pairs, so DST offsets never enter the calculation.

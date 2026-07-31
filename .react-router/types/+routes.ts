@@ -71,6 +71,17 @@ type Pages = {
   "/admin/panel": {
     params: {};
   };
+  "/admin/serie": {
+    params: {};
+  };
+  "/admin/serie/nowa": {
+    params: {};
+  };
+  "/admin/serie/:id": {
+    params: {
+      "id": string;
+    };
+  };
   "/admin/uzytkownicy": {
     params: {};
   };
@@ -88,7 +99,7 @@ type Pages = {
 type RouteFiles = {
   "root.tsx": {
     id: "root";
-    page: "/" | "/login" | "/logout" | "/regulamin" | "/obserwator" | "/obserwator/kalendarz" | "/obserwator/wyjscie" | "/api/pending-count" | "/api/notifications" | "/rezerwacje/nowa" | "/rezerwacje/:id" | "/rezerwacje/:id/edytuj" | "/rezerwacje/:id/zmiana" | "/ustawienia" | "/powiadomienia" | "/admin/dzisiaj" | "/admin/rezerwacje" | "/admin/panel" | "/admin/uzytkownicy" | "/admin/sale" | "/admin/logi" | "/admin/obserwator";
+    page: "/" | "/login" | "/logout" | "/regulamin" | "/obserwator" | "/obserwator/kalendarz" | "/obserwator/wyjscie" | "/api/pending-count" | "/api/notifications" | "/rezerwacje/nowa" | "/rezerwacje/:id" | "/rezerwacje/:id/edytuj" | "/rezerwacje/:id/zmiana" | "/ustawienia" | "/powiadomienia" | "/admin/dzisiaj" | "/admin/rezerwacje" | "/admin/panel" | "/admin/serie" | "/admin/serie/nowa" | "/admin/serie/:id" | "/admin/uzytkownicy" | "/admin/sale" | "/admin/logi" | "/admin/obserwator";
   };
   "routes/login.tsx": {
     id: "routes/login";
@@ -124,7 +135,7 @@ type RouteFiles = {
   };
   "routes/_app.tsx": {
     id: "routes/_app";
-    page: "/" | "/rezerwacje/nowa" | "/rezerwacje/:id" | "/rezerwacje/:id/edytuj" | "/rezerwacje/:id/zmiana" | "/ustawienia" | "/powiadomienia" | "/admin/dzisiaj" | "/admin/rezerwacje" | "/admin/panel" | "/admin/uzytkownicy" | "/admin/sale" | "/admin/logi" | "/admin/obserwator";
+    page: "/" | "/rezerwacje/nowa" | "/rezerwacje/:id" | "/rezerwacje/:id/edytuj" | "/rezerwacje/:id/zmiana" | "/ustawienia" | "/powiadomienia" | "/admin/dzisiaj" | "/admin/rezerwacje" | "/admin/panel" | "/admin/serie" | "/admin/serie/nowa" | "/admin/serie/:id" | "/admin/uzytkownicy" | "/admin/sale" | "/admin/logi" | "/admin/obserwator";
   };
   "routes/dashboard.tsx": {
     id: "routes/dashboard";
@@ -166,6 +177,18 @@ type RouteFiles = {
     id: "routes/admin.panel";
     page: "/admin/panel";
   };
+  "routes/admin.serie.tsx": {
+    id: "routes/admin.serie";
+    page: "/admin/serie";
+  };
+  "routes/admin.serie.nowa.tsx": {
+    id: "routes/admin.serie.nowa";
+    page: "/admin/serie/nowa";
+  };
+  "routes/admin.serie.$id.tsx": {
+    id: "routes/admin.serie.$id";
+    page: "/admin/serie/:id";
+  };
   "routes/admin.uzytkownicy.tsx": {
     id: "routes/admin.uzytkownicy";
     page: "/admin/uzytkownicy";
@@ -205,6 +228,9 @@ type RouteModules = {
   "routes/admin.dzisiaj": typeof import("./app/routes/admin.dzisiaj.tsx");
   "routes/admin.rezerwacje": typeof import("./app/routes/admin.rezerwacje.tsx");
   "routes/admin.panel": typeof import("./app/routes/admin.panel.tsx");
+  "routes/admin.serie": typeof import("./app/routes/admin.serie.tsx");
+  "routes/admin.serie.nowa": typeof import("./app/routes/admin.serie.nowa.tsx");
+  "routes/admin.serie.$id": typeof import("./app/routes/admin.serie.$id.tsx");
   "routes/admin.uzytkownicy": typeof import("./app/routes/admin.uzytkownicy.tsx");
   "routes/admin.sale": typeof import("./app/routes/admin.sale.tsx");
   "routes/admin.logi": typeof import("./app/routes/admin.logi.tsx");

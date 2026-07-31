@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import type { Route } from "./+types/admin.logi";
 import { getTokenFromRequest, getSessionUser, requireUser } from "~/lib/auth.server";
 import { queryAll } from "~/lib/db.server";
@@ -16,8 +16,13 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 
   const url = new URL(request.url);
   const page = Math.max(1, parseInt(url.searchParams.get("strona") ?? "1", 10));
+  const showCleanup = url.searchParams.get("czyszczenie") === "1";
   const limit = 50;
   const offset = (page - 1) * limit;
+
+  // The automatic data-retention cleanup job logs constantly and drowns out
+  // everything else by default — hidden unless explicitly toggled on.
+  const cleanupFilter = showCleanup ? "" : "WHERE al.action != 'retention.cleanup'";
 
   const logs = await queryAll<AuditLogRow>(
     env.DB,
@@ -28,15 +33,20 @@ export async function loader({ request, context }: Route.LoaderArgs) {
      LEFT JOIN bookings b ON al.entity_type='booking' AND b.id=al.entity_id
      LEFT JOIN users tu ON al.entity_type='user' AND tu.id=al.entity_id
      LEFT JOIN rooms r ON al.entity_type='room' AND r.id=al.entity_id
+     ${cleanupFilter}
      ORDER BY al.created_at DESC
      LIMIT ? OFFSET ?`,
     [limit, offset]
   );
 
-  const countRow = await queryAll<{ n: number }>(env.DB, "SELECT COUNT(*) as n FROM audit_logs", []);
+  const countRow = await queryAll<{ n: number }>(
+    env.DB,
+    `SELECT COUNT(*) as n FROM audit_logs al ${cleanupFilter}`,
+    []
+  );
   const total = countRow[0]?.n ?? 0;
 
-  return { logs, page, total, limit };
+  return { logs, page, total, limit, showCleanup };
 }
 
 const ACTION_LABELS: Record<string, string> = {
@@ -72,11 +82,17 @@ const ACTION_LABELS: Record<string, string> = {
   'auth.observer_login': 'Zalogowano do podglądu',
   'auth.observer_login_failed': 'Nieudane logowanie do podglądu',
   'auth.observer_logout': 'Wylogowano z podglądu',
-  'retention.cleanup': 'Automatyczne czyszczenie danych',
+  'retention.cleanup': '♻️ Automatyczne czyszczenie danych',
+  'series.created': 'Utworzono serię cykliczną',
+  'series.bulk_edited': 'Zaktualizowano terminy serii',
+  'series.split': 'Zmieniono regułę serii cyklicznej',
+  'series.bulk_deleted': 'Usunięto terminy serii',
+  'series.deleted': 'Usunięto serię cykliczną',
 };
 
 const ENTITY_TYPE_LABELS: Record<string, string> = {
   booking: 'Rezerwacja',
+  booking_series: 'Seria cykliczna',
   user: 'Użytkownik',
   room: 'Sala',
   change_request: 'Wniosek o zmianę',
@@ -92,14 +108,32 @@ function entityLabel(log: AuditLogRow): string {
 }
 
 export default function AdminLogi({ loaderData }: Route.ComponentProps) {
-  const { logs, page, total, limit } = loaderData;
+  const { logs, page, total, limit, showCleanup } = loaderData;
   const totalPages = Math.ceil(total / limit);
   const [selected, setSelected] = useState<AuditLogRow | null>(null);
+  const navigate = useNavigate();
+
+  function toggleCleanup(checked: boolean) {
+    const params = new URLSearchParams();
+    if (checked) params.set("czyszczenie", "1");
+    navigate(`?${params.toString()}`);
+  }
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">Logi audytu</h1>
-      <p className="text-sm text-gray-500">{total} wpisów łącznie</p>
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-gray-500">{total} wpisów łącznie</p>
+        <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={showCleanup}
+            onChange={e => toggleCleanup(e.target.checked)}
+            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+          Pokaż logi automatycznego czyszczenia danych
+        </label>
+      </div>
 
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
         <table className="w-full text-sm">
@@ -154,13 +188,19 @@ export default function AdminLogi({ loaderData }: Route.ComponentProps) {
       {totalPages > 1 && (
         <div className="flex items-center gap-2 text-sm">
           {page > 1 && (
-            <a href={`?strona=${page - 1}`} className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-50">
+            <a
+              href={`?strona=${page - 1}${showCleanup ? "&czyszczenie=1" : ""}`}
+              className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-50"
+            >
               ← Poprzednia
             </a>
           )}
           <span className="text-gray-500">Strona {page} z {totalPages}</span>
           {page < totalPages && (
-            <a href={`?strona=${page + 1}`} className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-50">
+            <a
+              href={`?strona=${page + 1}${showCleanup ? "&czyszczenie=1" : ""}`}
+              className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-50"
+            >
               Następna →
             </a>
           )}

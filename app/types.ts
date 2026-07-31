@@ -78,6 +78,50 @@ export interface Booking {
   counter_end_time: string | null;
   version: number;
   zarzad_edited_fields: string | null;
+  series_id: number | null;
+  series_exception: number;
+  hide_details_for_observer: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type RecurrenceType = 'weekly' | 'monthly_fixed_day' | 'monthly_nth_weekday';
+export type SeriesStatus = 'active' | 'cancelled' | 'superseded';
+
+export const RECURRENCE_TYPE_LABELS: Record<RecurrenceType, string> = {
+  weekly: 'Co tydzień',
+  monthly_fixed_day: 'Co miesiąc (ustalony dzień)',
+  monthly_nth_weekday: 'Co miesiąc (pierwszy dzień tygodnia po dacie)',
+};
+
+export const WEEKDAY_LABELS: Record<number, string> = {
+  1: 'poniedziałek',
+  2: 'wtorek',
+  3: 'środa',
+  4: 'czwartek',
+  5: 'piątek',
+};
+
+export interface BookingSeries {
+  id: number;
+  room_id: number;
+  room_name?: string;
+  created_by_admin_id: number;
+  requester_id: number;
+  title: string | null;
+  start_time: string;
+  end_time: string;
+  attendee_count: number | null;
+  requester_note: string | null;
+  recurrence_type: RecurrenceType;
+  weekday: number | null;
+  month_day: number | null;
+  series_start_date: string;
+  series_end_date: string;
+  status: SeriesStatus;
+  supersedes_series_id: number | null;
+  superseded_by_series_id: number | null;
+  hide_details_for_observer: number;
   created_at: string;
   updated_at: string;
 }
