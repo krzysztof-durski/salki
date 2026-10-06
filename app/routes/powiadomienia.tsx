@@ -53,7 +53,7 @@ const LEGEND_GROUPS = [
 ];
 
 const DETAIL_LABELS: Record<string, string> = {
-  note: 'Uwagi', date: 'Data', hours: 'Godziny', title: 'Tytuł', attendees: 'Uczestnicy',
+  note: 'Uwagi', reason: 'Powód', room: 'Sala', date: 'Data', hours: 'Godziny', title: 'Tytuł', attendees: 'Uczestnicy',
 };
 
 export async function action({ request, context }: Route.ActionArgs) {
@@ -80,9 +80,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const user = requireUser(await getSessionUser(env.DB, token));
 
   // Fetch BEFORE marking read so we can preserve original is_read=0 values for the divider
-  const notifications = await queryAll<Notification>(
-    env.DB,
-    `SELECT n.id, n.booking_id, n.type, n.is_read, n.details, n.created_at,
+  const sql = `SELECT n.id, n.booking_id, n.type, n.is_read, n.details, n.created_at,
             r.name as room_name,
             b.date as booking_date, b.start_time as booking_start,
             b.end_time as booking_end, b.title as booking_title
@@ -91,15 +89,27 @@ export async function loader({ request, context }: Route.LoaderArgs) {
      JOIN rooms r ON r.id = b.room_id
      WHERE n.user_id = ?
      ORDER BY n.created_at DESC
-     LIMIT 100`,
-    [user.id]
-  );
+     LIMIT 100`;
 
-  await execute(
-    env.DB,
-    "UPDATE notifications SET is_read=1 WHERE user_id=? AND is_read=0",
-    [user.id]
-  );
+  // D1 occasionally fails transiently; one retry avoids a 500 on the first visit.
+  let notifications: Notification[];
+  try {
+    notifications = await queryAll<Notification>(env.DB, sql, [user.id]);
+  } catch (err) {
+    console.error('[powiadomienia loader] select failed, retrying', String(err));
+    notifications = await queryAll<Notification>(env.DB, sql, [user.id]);
+  }
+
+  // Marking as read is best-effort: failing here must not break the page.
+  try {
+    await execute(
+      env.DB,
+      "UPDATE notifications SET is_read=1 WHERE user_id=? AND is_read=0",
+      [user.id]
+    );
+  } catch (err) {
+    console.error('[powiadomienia loader] mark-read failed', String(err));
+  }
 
   return { notifications, userRole: user.role };
 }
@@ -200,8 +210,20 @@ export default function Powiadomienia({ loaderData }: Route.ComponentProps) {
                 : n.room_name;
 
               const details = (() => {
-                try { return n.details ? JSON.parse(n.details) as Record<string, { from: unknown; to: unknown }> : null; }
-                catch { return null; }
+                try {
+                  if (!n.details) return null;
+                  const parsed = JSON.parse(n.details) as Record<string, unknown>;
+                  const out: Record<string, { from: unknown; to: unknown }> = {};
+                  for (const [key, val] of Object.entries(parsed)) {
+                    if (val && typeof val === 'object' && ('from' in val || 'to' in val)) {
+                      out[key] = val as { from: unknown; to: unknown };
+                    } else if (val !== null && val !== undefined && val !== '') {
+                      // Flat value, e.g. { reason: "..." } on rejected change requests
+                      out[key] = { from: null, to: val };
+                    }
+                  }
+                  return Object.keys(out).length ? out : null;
+                } catch { return null; }
               })();
 
               const card = (
